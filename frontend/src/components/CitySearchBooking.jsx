@@ -101,16 +101,10 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
 
   const handleFromCityChange = (newFrom) => {
     setFromCity(newFrom);
-    onSelectSearchRoute(newFrom, toCity, passengers);
-    const recs = getVoiceRecommendations(`${newFrom} to ${toCity}`, INITIAL_BUSES);
-    setRealtimeRecommendations(recs);
   };
 
   const handleToCityChange = (newTo) => {
     setToCity(newTo);
-    onSelectSearchRoute(fromCity, newTo, passengers);
-    const recs = getVoiceRecommendations(`${fromCity} to ${newTo}`, INITIAL_BUSES);
-    setRealtimeRecommendations(recs);
   };
 
   const handleSwapCities = () => {
@@ -118,9 +112,6 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     const tempTo = fromCity;
     setFromCity(tempFrom);
     setToCity(tempTo);
-    onSelectSearchRoute(tempFrom, tempTo, passengers);
-    const recs = getVoiceRecommendations(`${tempFrom} to ${tempTo}`, INITIAL_BUSES);
-    setRealtimeRecommendations(recs);
   };
 
   const handleSearchBuses = (e) => {
@@ -632,12 +623,8 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         <button
           type="button"
           onClick={() => {
-            const f = 'Delhi (Kashmiri Gate ISBT)';
-            const t = 'Noida (Sector 62)';
-            setFromCity(f);
-            setToCity(t);
-            onSelectSearchRoute(f, t, passengers);
-            setRealtimeRecommendations(getVoiceRecommendations(`${f} to ${t}`, INITIAL_BUSES));
+            setFromCity('Delhi (Kashmiri Gate ISBT)');
+            setToCity('Noida (Sector 62)');
           }}
           className="bg-navy-800 hover:bg-navy-700 text-saffron-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
         >
@@ -646,12 +633,8 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         <button
           type="button"
           onClick={() => {
-            const f = 'Rohini (Sector 14 & Metro)';
-            const t = 'Greater Noida (Pari Chowk)';
-            setFromCity(f);
-            setToCity(t);
-            onSelectSearchRoute(f, t, passengers);
-            setRealtimeRecommendations(getVoiceRecommendations(`${f} to ${t}`, INITIAL_BUSES));
+            setFromCity('Rohini (Sector 14 & Metro)');
+            setToCity('Greater Noida (Pari Chowk)');
           }}
           className="bg-navy-800 hover:bg-navy-700 text-forest-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
         >
@@ -660,12 +643,8 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         <button
           type="button"
           onClick={() => {
-            const f = 'Delhi (Dhaula Kuan)';
-            const t = 'Gurugram (Cyber Hub)';
-            setFromCity(f);
-            setToCity(t);
-            onSelectSearchRoute(f, t, passengers);
-            setRealtimeRecommendations(getVoiceRecommendations(`${f} to ${t}`, INITIAL_BUSES));
+            setFromCity('Delhi (Dhaula Kuan)');
+            setToCity('Gurugram (Cyber Hub)');
           }}
           className="bg-navy-800 hover:bg-navy-700 text-saffron-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
         >
@@ -674,12 +653,8 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         <button
           type="button"
           onClick={() => {
-            const f = 'Delhi (Anand Vihar ISBT)';
-            const t = 'Ghaziabad (Old Bus Stand)';
-            setFromCity(f);
-            setToCity(t);
-            onSelectSearchRoute(f, t, passengers);
-            setRealtimeRecommendations(getVoiceRecommendations(`${f} to ${t}`, INITIAL_BUSES));
+            setFromCity('Delhi (Anand Vihar ISBT)');
+            setToCity('Ghaziabad (Old Bus Stand)');
           }}
           className="bg-navy-800 hover:bg-navy-700 text-white px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
         >
@@ -688,12 +663,8 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         <button
           type="button"
           onClick={() => {
-            const f = 'Gurugram (IFFCO Chowk)';
-            const t = 'Faridabad (Bata Chowk)';
-            setFromCity(f);
-            setToCity(t);
-            onSelectSearchRoute(f, t, passengers);
-            setRealtimeRecommendations(getVoiceRecommendations(`${f} to ${t}`, INITIAL_BUSES));
+            setFromCity('Gurugram (IFFCO Chowk)');
+            setToCity('Faridabad (Bata Chowk)');
           }}
           className="bg-navy-800 hover:bg-navy-700 text-forest-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
         >
@@ -702,12 +673,8 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         <button
           type="button"
           onClick={() => {
-            const f = 'Rohini (Sector 14 & Metro)';
-            const t = 'Noida (Sector 62)';
-            setFromCity(f);
-            setToCity(t);
-            onSelectSearchRoute(f, t, passengers);
-            setRealtimeRecommendations(getVoiceRecommendations(`${f} to ${t}`, INITIAL_BUSES));
+            setFromCity('Rohini (Sector 14 & Metro)');
+            setToCity('Noida (Sector 62)');
           }}
           className="bg-navy-800 hover:bg-navy-700 text-saffron-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
         >
