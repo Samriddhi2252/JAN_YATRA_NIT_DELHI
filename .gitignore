@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs
+dist/
+build/
+*.log
+
+# Environment & IDE
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/
