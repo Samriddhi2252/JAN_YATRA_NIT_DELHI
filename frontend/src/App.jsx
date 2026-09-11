@@ -108,7 +108,29 @@ export default function App() {
 
   const handleAutoBookFromVoice = (voiceBookingData) => {
     setAutoBookingData(voiceBookingData);
-    setTicketModalBus(buses[0]);
+    let matchedBus = voiceBookingData?.bus;
+    if (!matchedBus && voiceBookingData?.from && voiceBookingData?.to) {
+      const direct = buses.filter((b) => 
+        b.from?.toLowerCase().includes(voiceBookingData.from.toLowerCase().split(' ')[0]) &&
+        b.to?.toLowerCase().includes(voiceBookingData.to.toLowerCase().split(' ')[0])
+      );
+      matchedBus = direct[0];
+    }
+    if (!matchedBus) {
+      matchedBus = buses.find((b) => 
+        (voiceBookingData?.from && b.from?.toLowerCase().includes(voiceBookingData.from.toLowerCase().split(' ')[0])) ||
+        (voiceBookingData?.to && b.to?.toLowerCase().includes(voiceBookingData.to.toLowerCase().split(' ')[0]))
+      ) || buses[0];
+    }
+    setTicketModalBus(matchedBus ? {
+      ...matchedBus,
+      from: voiceBookingData?.from || matchedBus.from,
+      to: voiceBookingData?.to || matchedBus.to,
+      departureTime: voiceBookingData?.departureTime || matchedBus.departureTime,
+      arrivalTime: voiceBookingData?.arrivalTime || matchedBus.arrivalTime,
+      duration: voiceBookingData?.duration || matchedBus.duration,
+      fare: voiceBookingData?.fare || matchedBus.fare,
+    } : buses[0]);
   };
 
   const handleDispatchBackupBus = () => {
@@ -148,9 +170,29 @@ export default function App() {
           <CommuterView
             buses={buses}
             routes={routes}
-            onOpenTicketModal={(bus) => {
-              setAutoBookingData(null);
-              setTicketModalBus(bus);
+            onOpenTicketModal={(bus, autoData) => {
+              setAutoBookingData(autoData || null);
+              let targetBus = bus;
+              if (!targetBus && autoData?.from && autoData?.to) {
+                const direct = buses.filter((b) => 
+                  b.from?.toLowerCase().includes(autoData.from.toLowerCase().split(' ')[0]) &&
+                  b.to?.toLowerCase().includes(autoData.to.toLowerCase().split(' ')[0])
+                );
+                targetBus = direct[0] || buses[0];
+              }
+              if (targetBus) {
+                setTicketModalBus({
+                  ...targetBus,
+                  from: autoData?.from || targetBus.from,
+                  to: autoData?.to || targetBus.to,
+                  departureTime: autoData?.departureTime || targetBus.departureTime,
+                  arrivalTime: autoData?.arrivalTime || targetBus.arrivalTime,
+                  duration: autoData?.duration || targetBus.duration,
+                  fare: autoData?.fare || targetBus.fare,
+                });
+              } else {
+                setTicketModalBus(buses[0]);
+              }
             }}
             isOffline={isOffline}
           />

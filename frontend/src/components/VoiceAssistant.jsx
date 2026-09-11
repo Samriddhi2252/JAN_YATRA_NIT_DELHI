@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mic, MicOff, Volume2, X, Sparkles } from 'lucide-react';
-import { createSpeechRecognizer, speakText, parseVoiceIntent } from '../services/speech';
-import { SAMPLE_VOICE_COMMANDS } from '../services/mockData';
+import { createSpeechRecognizer, speakText, parseVoiceIntent, getVoiceRecommendations } from '../services/speech';
+import { SAMPLE_VOICE_COMMANDS, INITIAL_BUSES } from '../services/mockData';
 
 export default function VoiceAssistant({ onAutoBookTicket }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -11,7 +11,8 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
   const [chatHistory, setChatHistory] = useState([
     {
       sender: 'assistant',
-      text: 'नमस्ते! मैं जन यात्रा वॉइस असिस्टेंट हूँ। आप बोलकर टिकट बुक कर सकते हैं या बस का समय पूछ सकते हैं।',
+      text: 'नमस्ते! मैं जन यात्रा वॉइस असिस्टेंट हूँ। आप बोलकर टिकट बुक कर सकते हैं या बस का समय पूछ सकते हैं (उदा: "दिल्ली से नोएडा की बस चाहिए")।',
+      recommendations: INITIAL_BUSES.slice(0, 2),
       time: 'Just now'
     }
   ]);
@@ -62,21 +63,37 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
     setChatHistory((prev) => [...prev, userMsg]);
 
     const intent = parseVoiceIntent(inputText);
+    const matchingBuses = getVoiceRecommendations(inputText, INITIAL_BUSES);
     
     setTimeout(() => {
       const assistantMsg = {
         sender: 'assistant',
         text: intent.responseText,
+        recommendations: matchingBuses.slice(0, 3),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
       setChatHistory((prev) => [...prev, assistantMsg]);
       speakText(intent.responseText, selectedLang);
 
+      if (intent.from && intent.to) {
+        window.dispatchEvent(
+          new CustomEvent('jan_yatra_voice_search', {
+            detail: { from: intent.from, to: intent.to, count: intent.count || 1 }
+          })
+        );
+      }
+
       if (intent.type === 'BOOK_TICKET' && onAutoBookTicket) {
+        const busToBook = matchingBuses[0] || INITIAL_BUSES[0];
         onAutoBookTicket({
+          ...busToBook,
           from: intent.from,
           to: intent.to,
+          departureTime: busToBook.departureTime,
+          arrivalTime: busToBook.arrivalTime,
+          duration: busToBook.duration,
+          fare: busToBook.fare,
           count: intent.count
         });
       }
@@ -175,7 +192,50 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
                     }`}
                   >
                     <p>{msg.text}</p>
-                    <div className="flex items-center justify-between mt-1 text-[9px] opacity-75">
+                    
+                    {msg.recommendations && msg.recommendations.length > 0 && (
+                      <div className="mt-2.5 pt-2 border-t border-navy-100 space-y-1.5">
+                        <span className="text-[9px] font-black uppercase text-saffron-600 tracking-wide block">
+                          Matching Bus Recommendations:
+                        </span>
+                        <div className="space-y-1">
+                          {msg.recommendations.map((recBus) => (
+                            <button
+                              key={recBus.id}
+                              onClick={() => {
+                                if (onAutoBookTicket) {
+                                  onAutoBookTicket({
+                                    ...recBus,
+                                    from: recBus.from,
+                                    to: recBus.to,
+                                    departureTime: recBus.departureTime,
+                                    arrivalTime: recBus.arrivalTime,
+                                    duration: recBus.duration,
+                                    fare: recBus.fare,
+                                    count: 1
+                                  });
+                                }
+                              }}
+                              className="w-full text-left bg-navy-50 hover:bg-saffron-50 p-2 rounded-xl border border-navy-200 hover:border-saffron-300 transition-all flex items-center justify-between text-navy-900 group"
+                            >
+                              <div className="truncate pr-1">
+                                <strong className="text-[10px] text-navy-950 block truncate group-hover:text-saffron-600">
+                                  {recBus.routeName}
+                                </strong>
+                                <span className="text-[9px] text-navy-600 font-medium">
+                                  🕒 {recBus.departureTime} • ₹{recBus.fare} ({recBus.busType})
+                                </span>
+                              </div>
+                              <span className="bg-saffron-500 text-white text-[9px] font-black px-2 py-0.5 rounded-md flex-shrink-0 shadow-sm">
+                                Book
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between mt-2 text-[9px] opacity-75">
                       <span>{msg.time}</span>
                       {msg.sender === 'assistant' && (
                         <button

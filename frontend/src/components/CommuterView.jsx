@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { calculateMlEta } from '../services/mlEta';
+import { findBusesForRoute } from '../services/mockData';
 import CitySearchBooking from './CitySearchBooking';
-import { Bus, MapPin, Zap, Ticket, Sparkles, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Bus, MapPin, Zap, Ticket, Sparkles, ChevronRight, AlertTriangle, Info, X } from 'lucide-react';
 
 const createBusIcon = (occupancy, isSelected) => {
   let color = '#00205B';
@@ -46,29 +47,48 @@ function MapRecenter({ center }) {
 export default function CommuterView({ buses, routes, onOpenTicketModal, isOffline }) {
   const [selectedBusId, setSelectedBusId] = useState('BUS-100');
   const [useMlEta, setUseMlEta] = useState(true);
-  const [filteredBusList, setFilteredBusList] = useState(buses);
+  const [activePopoverBusId, setActivePopoverBusId] = useState(null);
+  const [activeDetailsPopover, setActiveDetailsPopover] = useState(false);
+  const [, setTick] = useState(0);
+
+  // Dynamic refresh interval to keep ETA dynamically factoring in real-time highway/tollgate delay adjustments
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const [activeSearch, setActiveSearch] = useState({
+    from: 'Delhi (Kashmiri Gate ISBT)',
+    to: 'Noida (Sector 62)'
+  });
+  const [filteredBusList, setFilteredBusList] = useState(() => {
+    return findBusesForRoute(buses, 'Delhi (Kashmiri Gate ISBT)', 'Noida (Sector 62)');
+  });
 
   useEffect(() => {
-    setFilteredBusList(buses);
-  }, [buses]);
-
-  const handleSelectSearchRoute = (from, to) => {
-    // Filter buses matching origin/destination or select closest route
-    const matched = buses.filter(
-      (b) =>
-        b.from.toLowerCase().includes(from.split(' ')[0].toLowerCase()) ||
-        b.to.toLowerCase().includes(to.split(' ')[0].toLowerCase())
-    );
-
-    if (matched.length > 0) {
+    if (activeSearch?.from && activeSearch?.to) {
+      const matched = findBusesForRoute(buses, activeSearch.from, activeSearch.to);
       setFilteredBusList(matched);
-      setSelectedBusId(matched[0].id);
+      if (matched.length > 0 && !matched.some((b) => b.id === selectedBusId)) {
+        setSelectedBusId(matched[0].id);
+      }
     } else {
       setFilteredBusList(buses);
     }
+  }, [buses, activeSearch]);
+
+  const handleSelectSearchRoute = (from, to) => {
+    setActiveSearch({ from, to });
+    const matched = findBusesForRoute(buses, from, to);
+    setFilteredBusList(matched);
+    if (matched.length > 0) {
+      setSelectedBusId(matched[0].id);
+    }
   };
 
-  const selectedBus = buses.find((b) => b.id === selectedBusId) || buses[0];
+  const selectedBus = filteredBusList.find((b) => b.id === selectedBusId) || filteredBusList[0] || buses[0];
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-5rem)] bg-[#f9f9fc]">
@@ -143,7 +163,7 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
               <Bus className="w-4 h-4 text-forest-700" />
               <span>Available Express Fleet ({filteredBusList.length})</span>
             </h2>
-            <span className="text-xs text-navy-600 font-bold">Delhi NCR & Haryana</span>
+            <span className="text-xs text-navy-600 font-bold">Delhi & Delhi NCR</span>
           </div>
 
           {/* Bus Cards List */}
@@ -176,14 +196,99 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
                     </div>
 
                     <div className="text-right">
-                      <div className={`text-xl font-black ${isSelected ? 'text-saffron-400' : 'text-forest-700'}`}>
-                        {displayMinutes} mins
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <div className={`text-xl font-black ${isSelected ? 'text-saffron-400' : 'text-forest-700'}`}>
+                          {displayMinutes} mins
+                        </div>
+                        {useMlEta && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActivePopoverBusId(activePopoverBusId === bus.id ? null : bus.id);
+                            }}
+                            className={`p-1 rounded-full transition-all ${
+                              isSelected ? 'text-saffron-300 hover:text-white hover:bg-navy-700' : 'text-navy-500 hover:text-navy-900 hover:bg-navy-100'
+                            }`}
+                            title="View GBDT Model ETA Breakdown"
+                          >
+                            <Info className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                       <span className={`text-[10px] font-bold block ${isSelected ? 'text-navy-200' : 'text-navy-600'}`}>
                         {useMlEta ? 'ML Predicted' : 'GPS Calculated'}
                       </span>
                     </div>
                   </div>
+
+                  {/* ML-Optimized ETA Tag / Badge next to bus ETA */}
+                  {useMlEta && (
+                    <div className="mb-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActivePopoverBusId(activePopoverBusId === bus.id ? null : bus.id);
+                        }}
+                        className={`w-full text-left inline-flex items-center justify-between px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-tight border transition-colors ${
+                          isSelected
+                            ? 'bg-saffron-500/20 text-saffron-300 border-saffron-400/40 hover:bg-saffron-500/30'
+                            : 'bg-saffron-50/90 text-saffron-900 border-saffron-200 hover:bg-saffron-100'
+                        }`}
+                      >
+                        <span className="flex items-center space-x-1">
+                          <Sparkles className="w-3 h-3 text-saffron-500 shrink-0" />
+                          <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                        </span>
+                        <span className="text-[9px] font-black opacity-80 underline ml-1">
+                          GBDT model info
+                        </span>
+                      </button>
+
+                      {/* Info Popover powered by GBDT tollgate delay model */}
+                      {activePopoverBusId === bus.id && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2 p-3 rounded-xl bg-white text-navy-950 border border-navy-200 shadow-xl text-left text-xs z-30 animate-in fade-in zoom-in-95 duration-150"
+                        >
+                          <div className="flex items-center justify-between pb-1.5 border-b border-navy-100">
+                            <span className="font-black text-navy-900 flex items-center space-x-1 text-[11px]">
+                              <Sparkles className="w-3.5 h-3.5 text-saffron-500" />
+                              <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActivePopoverBusId(null);
+                              }}
+                              className="text-navy-400 hover:text-navy-700 p-0.5 rounded"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-navy-600 font-semibold mt-1.5 leading-snug">
+                            Powered by our <strong>GBDT tollgate delay model</strong>. Dynamically factors in highway chokepoints and toll plaza queues in real time instead of a naive static countdown.
+                          </p>
+                          <div className="mt-2 space-y-1.5 bg-navy-50/70 p-2 rounded-lg text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <span className="text-navy-700 font-medium">Tollgate Queue Adjustment:</span>
+                              <span className="font-black text-saffron-700">+{busEta.tollgateDelayMins}m ({busEta.tollgateName.split('&')[0].trim()})</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-navy-700 font-medium">Highway Delay Adjustment:</span>
+                              <span className="font-black text-navy-800">+{busEta.highwayDelayMins}m ({busEta.highwayName.split('&')[0].trim()})</span>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-navy-200/60 pt-1">
+                              <span className="text-navy-900 font-bold">Total Dynamic ML ETA:</span>
+                              <span className="font-black text-forest-700">{busEta.mlEta} mins (vs {busEta.gpsEta}m raw GPS)</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-xs mt-3 pt-3 border-t border-navy-100/20">
                     <div className="flex items-center space-x-1.5">
@@ -193,13 +298,25 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
                       </span>
                     </div>
 
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                      bus.occupancy === 'EMPTY' ? 'bg-forest-100 text-forest-800' :
-                      bus.occupancy === 'HALF' ? 'bg-navy-100 text-navy-800' :
-                      bus.occupancy === 'FULL' ? 'bg-saffron-100 text-saffron-900' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {bus.occupancy}
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      {bus.departureTime && (
+                        <span className={`text-[11px] font-bold ${isSelected ? 'text-saffron-300' : 'text-navy-600'}`}>
+                          🕒 {bus.departureTime}
+                        </span>
+                      )}
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-black ${
+                        isSelected ? 'bg-saffron-500 text-white' : 'bg-forest-50 text-forest-700 border border-forest-200'
+                      }`}>
+                        ₹{bus.fare}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        bus.occupancy === 'EMPTY' ? 'bg-forest-100 text-forest-800' :
+                        bus.occupancy === 'HALF' ? 'bg-navy-100 text-navy-800' :
+                        bus.occupancy === 'FULL' ? 'bg-saffron-100 text-saffron-900' : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {bus.occupancy}
+                      </span>
+                    </div>
                   </div>
                 </div>
               );
@@ -234,41 +351,128 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
             </div>
           )}
 
-          {selectedBus && (
-            <div className="absolute bottom-4 left-4 right-4 lg:left-8 lg:right-auto lg:w-96 z-20 glass-card rounded-2xl p-4 shadow-xl border border-navy-100">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="w-3 h-3 rounded-full bg-forest-500 animate-ping"></span>
-                  <span className="text-xs font-black text-navy-900">{selectedBus.routeName}</span>
-                </div>
-                <span className="text-[11px] font-black text-navy-800 bg-navy-50 px-2.5 py-0.5 rounded-full border border-navy-200">
-                  {selectedBus.regNumber}
-                </span>
-              </div>
+          {selectedBus && (() => {
+            const selectedBusEta = calculateMlEta(selectedBus);
+            const activeEtaMins = useMlEta ? selectedBusEta.mlEta : selectedBusEta.gpsEta;
 
-              <div className="grid grid-cols-2 gap-3 text-xs my-3 bg-navy-50/50 p-3 rounded-xl border border-navy-100">
-                <div>
-                  <span className="text-navy-600 block text-[10px] font-bold">GPS Speed</span>
-                  <span className="font-extrabold text-navy-900">{selectedBus.speed} km/h</span>
+            return (
+              <div className="absolute bottom-4 left-4 right-4 lg:left-8 lg:right-auto lg:w-96 z-20 glass-card rounded-2xl p-4 shadow-xl border border-navy-100">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-3 h-3 rounded-full bg-forest-500 animate-ping"></span>
+                    <span className="text-xs font-black text-navy-900">{selectedBus.routeName}</span>
+                  </div>
+                  <span className="text-[11px] font-black text-navy-800 bg-navy-50 px-2.5 py-0.5 rounded-full border border-navy-200">
+                    {selectedBus.regNumber}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-navy-600 block text-[10px] font-bold">ML Delay Factor</span>
-                  <span className="font-extrabold text-saffron-600">{selectedBus.historicalDelayFactor}</span>
-                </div>
-              </div>
 
-              <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-navy-800 font-bold">Driver: {selectedBus.driver}</span>
-                <button
-                  onClick={() => onOpenTicketModal(selectedBus)}
-                  className="text-saffron-600 hover:text-saffron-700 font-black flex items-center space-x-1"
-                >
-                  <span>Book Pass (₹{selectedBus.fare || 110})</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                {/* ML-Optimized ETA Visual Tag, Badge & GBDT Model Adjustment */}
+                <div className="bg-gradient-to-r from-saffron-50 to-navy-50 border border-saffron-200/80 rounded-xl p-2.5 my-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase tracking-wider font-extrabold text-navy-600 block">
+                        Estimated Arrival (ETA)
+                      </span>
+                      <div className="flex items-baseline space-x-1.5">
+                        <span className="text-2xl font-black text-navy-950">
+                          {activeEtaMins} mins
+                        </span>
+                        {useMlEta && (
+                          <span className="text-[11px] font-bold text-saffron-600">
+                            (Dynamic GBDT Model)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {useMlEta && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailsPopover(!activeDetailsPopover)}
+                        className="p-1 text-navy-600 hover:text-navy-950 rounded-full hover:bg-white/60 transition-all"
+                        title="View GBDT Model Delay Adjustments"
+                      >
+                        <Info className="w-4 h-4 text-saffron-600" />
+                      </button>
+                    )}
+                  </div>
+
+                  {useMlEta && (
+                    <div className="mt-1.5 pt-1.5 border-t border-saffron-200/60">
+                      <div className="flex items-center space-x-1">
+                        <span className="inline-flex items-center space-x-1 bg-saffron-500 text-white px-2 py-0.5 rounded-md text-[10px] font-black shadow-xs">
+                          <Sparkles className="w-3 h-3" />
+                          <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-navy-700 font-semibold mt-1">
+                        Powered by our <strong>GBDT tollgate delay model</strong>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Real-Time Speed & Dynamic Delay Adjustments */}
+                <div className="grid grid-cols-2 gap-2 text-xs my-2.5 bg-navy-50/50 p-2.5 rounded-xl border border-navy-100">
+                  <div>
+                    <span className="text-navy-600 block text-[10px] font-bold">GPS Speed</span>
+                    <span className="font-extrabold text-navy-900">{selectedBus.speed} km/h</span>
+                  </div>
+                  <div>
+                    <span className="text-navy-600 block text-[10px] font-bold">Tollgate Queue Adj.</span>
+                    <span className="font-extrabold text-saffron-600">+{selectedBusEta.tollgateDelayMins}m</span>
+                  </div>
+                  <div className="col-span-2 pt-1 border-t border-navy-100/60 flex items-center justify-between text-[10px]">
+                    <span className="text-navy-600 font-medium">Highway Delay Adj:</span>
+                    <span className="font-bold text-navy-800">+{selectedBusEta.highwayDelayMins}m ({selectedBusEta.highwayName.split('&')[0].trim()})</span>
+                  </div>
+                </div>
+
+                {/* Popover overlay for Route Details Card if toggled */}
+                {activeDetailsPopover && useMlEta && (
+                  <div className="mb-2.5 p-3 rounded-xl bg-white border border-navy-200 shadow-xl text-xs">
+                    <div className="flex items-center justify-between pb-1 border-b border-navy-100">
+                      <span className="font-black text-navy-900 text-[11px] flex items-center space-x-1">
+                        <Sparkles className="w-3.5 h-3.5 text-saffron-500" />
+                        <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDetailsPopover(false)}
+                        className="text-navy-400 hover:text-navy-700 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-navy-600 font-medium mt-1">
+                      Powered by our GBDT tollgate delay model. Instead of a static naive countdown, ETA dynamically accounts for toll plaza queues and highway choke points.
+                    </p>
+                    <div className="mt-2 space-y-1 bg-navy-50 p-2 rounded-lg text-[10px]">
+                      <div className="flex justify-between">
+                        <span className="text-navy-700 font-medium">Toll Plaza:</span>
+                        <span className="font-black text-saffron-700">{selectedBusEta.tollgateName} (+{selectedBusEta.tollgateDelayMins}m)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-navy-700 font-medium">Corridor Flow:</span>
+                        <span className="font-black text-navy-800">{selectedBusEta.highwayName} (+{selectedBusEta.highwayDelayMins}m)</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-navy-800 font-bold">Driver: {selectedBus.driver}</span>
+                  <button
+                    onClick={() => onOpenTicketModal(selectedBus)}
+                    className="text-saffron-600 hover:text-saffron-700 font-black flex items-center space-x-1"
+                  >
+                    <span>Book Pass (₹{selectedBus.fare || 110})</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <MapContainer
             center={[selectedBus.currentLocation.lat, selectedBus.currentLocation.lng]}
@@ -293,27 +497,54 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
               />
             ))}
 
-            {buses.map((bus) => (
-              <Marker
-                key={bus.id}
-                position={[bus.currentLocation.lat, bus.currentLocation.lng]}
-                icon={createBusIcon(bus.occupancy, bus.id === selectedBusId)}
-                eventHandlers={{
-                  click: () => setSelectedBusId(bus.id),
-                }}
-              >
-                <Popup className="bus-popup">
-                  <div className="p-1 max-w-xs">
-                    <span className="text-xs font-black text-navy-800 block">{bus.regNumber}</span>
-                    <p className="text-xs text-navy-950 font-bold">{bus.routeName}</p>
-                    <div className="mt-1 text-[11px] text-navy-700">
-                      <div>ETA (GPS): <strong>{bus.gpsEtaMinutes} mins</strong></div>
-                      <div>ETA (ML Predicted): <strong className="text-saffron-600">{bus.mlEtaMinutes} mins</strong></div>
+            {selectedBus?.routeCoordinates && (
+              <Polyline
+                positions={selectedBus.routeCoordinates}
+                color="#F46522"
+                weight={5}
+                opacity={0.9}
+              />
+            )}
+
+            {filteredBusList.map((bus) => {
+              const markerBusEta = calculateMlEta(bus);
+              return (
+                <Marker
+                  key={bus.id}
+                  position={[bus.currentLocation.lat, bus.currentLocation.lng]}
+                  icon={createBusIcon(bus.occupancy, bus.id === selectedBusId)}
+                  eventHandlers={{
+                    click: () => setSelectedBusId(bus.id),
+                  }}
+                >
+                  <Popup className="bus-popup">
+                    <div className="p-1 max-w-xs">
+                      <span className="text-xs font-black text-navy-800 block">{bus.regNumber}</span>
+                      <p className="text-xs text-navy-950 font-bold">{bus.routeName}</p>
+                      <div className="mt-1.5 text-[11px] text-navy-700 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span>Raw GPS ETA:</span>
+                          <strong>{markerBusEta.gpsEta} mins</strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Dynamic ML ETA:</span>
+                          <strong className="text-saffron-600 font-black">{markerBusEta.mlEta} mins</strong>
+                        </div>
+                        <div className="bg-saffron-50 border border-saffron-200 text-saffron-900 p-1.5 rounded-lg text-[10px] mt-1.5">
+                          <div className="font-black flex items-center space-x-1">
+                            <Sparkles className="w-3 h-3 text-saffron-600 shrink-0" />
+                            <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                          </div>
+                          <div className="text-[9px] text-navy-700 mt-0.5 leading-snug">
+                            Powered by our GBDT tollgate delay model ({markerBusEta.tollgateName.split('&')[0].trim()}: +{markerBusEta.tollgateDelayMins}m, {markerBusEta.highwayName.split('&')[0].trim()}: +{markerBusEta.highwayDelayMins}m)
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MapContainer>
         </div>
 

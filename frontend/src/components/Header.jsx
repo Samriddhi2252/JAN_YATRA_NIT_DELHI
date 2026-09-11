@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bus, Wifi, WifiOff, Info, Phone, UserCheck, LayoutDashboard } from 'lucide-react';
 
 export default function Header({ 
@@ -9,6 +9,36 @@ export default function Header({
   offlineQueueCount, 
   onOpenPitch 
 }) {
+  const [isOnline, setIsOnline] = useState(() => {
+    return typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+      ? navigator.onLine
+      : true;
+  });
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (setIsOffline) {
+        setIsOffline(false);
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      if (setIsOffline) {
+        setIsOffline(true);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [setIsOffline]);
+
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-navy-100 shadow-md">
       <div className="w-full px-3 sm:px-6">
@@ -93,19 +123,23 @@ export default function Header({
           {/* Right Action Controls: Offline Simulator + System Info Drawer */}
           <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
             
-            {/* Offline Network Simulator Toggle */}
+            {/* Live Network Status Indicator */}
             <button
-              onClick={() => setIsOffline(!isOffline)}
-              className={`flex items-center space-x-2 px-3.5 py-2.5 rounded-xl text-xs font-black transition-all border ${
-                isOffline
-                  ? 'bg-saffron-500 text-white border-saffron-600 shadow-saffron animate-pulse'
-                  : 'bg-forest-50 text-forest-700 border-forest-200 hover:bg-forest-100'
+              type="button"
+              className={`flex items-center space-x-2 px-3.5 py-2.5 rounded-xl text-xs font-black transition-all border cursor-default ${
+                isOnline
+                  ? 'bg-green-50 text-green-700 border-green-200'
+                  : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
               }`}
-              title="Click to simulate zero-internet offline PWA mode"
+              title={isOnline ? 'Live / Online' : 'Offline Mode'}
             >
-              {isOffline ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
-              <span className="hidden sm:inline">
-                {isOffline ? 'Offline Mode Active' : 'Live Online'}
+              {isOnline ? (
+                <Wifi className="w-4 h-4 text-green-600" />
+              ) : (
+                <WifiOff className="w-4 h-4 text-red-600" />
+              )}
+              <span>
+                {isOnline ? 'Live / Online' : 'Offline Mode'}
               </span>
             </button>
 
