@@ -109,6 +109,20 @@ export default function DriverView({ bus, onUpdateOccupancy, onReportDelay }) {
             </button>
 
             <button
+              onClick={() => handleOccupancyChange('75% (FILLING FAST)')}
+              className={`p-4 rounded-2xl border-2 font-black text-xs transition-all text-center ${
+                activeOccupancy === '75% (FILLING FAST)' || activeOccupancy === '75% (Filling Fast)' || activeOccupancy === '75%'
+                  ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-md scale-[1.02]'
+                  : 'bg-navy-50/50 border-navy-100 text-navy-800 hover:border-navy-200'
+              }`}
+            >
+              <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center mx-auto mb-2 text-sm font-black">
+                🟠
+              </div>
+              <span>75% (FILLING FAST)</span>
+            </button>
+
+            <button
               onClick={() => handleOccupancyChange('FULL')}
               className={`p-4 rounded-2xl border-2 font-black text-xs transition-all text-center ${
                 activeOccupancy === 'FULL'
@@ -124,13 +138,13 @@ export default function DriverView({ bus, onUpdateOccupancy, onReportDelay }) {
 
             <button
               onClick={() => handleOccupancyChange('OVERCROWDED')}
-              className={`p-4 rounded-2xl border-2 font-black text-xs transition-all text-center ${
+              className={`col-span-2 p-3.5 rounded-2xl border-2 font-black text-xs transition-all text-center flex items-center justify-center space-x-2 ${
                 activeOccupancy === 'OVERCROWDED'
                   ? 'bg-rose-50 border-rose-600 text-rose-900 shadow-md scale-[1.02]'
                   : 'bg-navy-50/50 border-navy-100 text-navy-800 hover:border-navy-200'
               }`}
             >
-              <div className="w-8 h-8 rounded-full bg-rose-600 text-white flex items-center justify-center mx-auto mb-2 text-sm font-black">
+              <div className="w-7 h-7 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs font-black flex-shrink-0">
                 🔴
               </div>
               <span>OVERCROWDED</span>
@@ -188,28 +202,55 @@ export default function DriverView({ bus, onUpdateOccupancy, onReportDelay }) {
           <span>Route Stop Sequence & Arrival Times</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-bold">
-          <div className="bg-forest-50 border border-forest-200 text-forest-900 p-3.5 rounded-2xl">
-            <span className="text-[10px] text-forest-700 block uppercase font-black">Stop 1 (Passed)</span>
-            <span className="text-sm font-black">Rohtak Stand</span>
-            <span className="block text-[11px] text-forest-800 mt-1">Departed 08:30 AM</span>
-          </div>
-          <div className="bg-saffron-50 border border-saffron-300 text-saffron-950 p-3.5 rounded-2xl shadow-sm">
-            <span className="text-[10px] text-saffron-700 block uppercase font-black">Stop 2 (Approaching)</span>
-            <span className="text-sm font-black">Meham Chowk</span>
-            <span className="block text-[11px] text-saffron-900 mt-1">ETA: 09:12 AM (2 mins)</span>
-          </div>
-          <div className="bg-navy-50/60 border border-navy-100 text-navy-900 p-3.5 rounded-2xl">
-            <span className="text-[10px] text-navy-600 block uppercase font-black">Stop 3</span>
-            <span className="text-sm font-black">Hansi Bypass</span>
-            <span className="block text-[11px] text-navy-700 mt-1">ETA: 09:45 AM</span>
-          </div>
-          <div className="bg-navy-50/60 border border-navy-100 text-navy-900 p-3.5 rounded-2xl">
-            <span className="text-[10px] text-navy-600 block uppercase font-black">Stop 4 (Terminal)</span>
-            <span className="text-sm font-black">Hisar Depot</span>
-            <span className="block text-[11px] text-navy-700 mt-1">ETA: 10:20 AM</span>
-          </div>
-        </div>
+        {(() => {
+          const now = new Date();
+          const formatStopEta = (minutesFromNow) => {
+            const d = new Date(now.getTime() + minutesFromNow * 60000);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          };
+
+          const stop1Name = bus?.from ? bus.from.split('(')[0].trim() : 'Origin Depot';
+          const stop1Time = bus?.departureTime || formatStopEta(-22);
+
+          const stop2Name = bus?.nextStop || 'Approaching Stop';
+          const stop2EtaMins = Number(bus?.gpsEtaMinutes) || 4;
+          const stop2Time = formatStopEta(stop2EtaMins);
+
+          const stop3Name = bus?.to?.includes('Noida') ? 'Mayur Vihar / Akshardham' :
+                            bus?.to?.includes('Gurugram') ? 'IFFCO Chowk' :
+                            bus?.to?.includes('Ghaziabad') ? 'Mohan Nagar' :
+                            bus?.to?.includes('Faridabad') ? 'Badarpur Border' :
+                            'Transit Interchange';
+          const stop3Time = formatStopEta(stop2EtaMins + 18);
+
+          const stop4Name = bus?.to ? bus.to.split('(')[0].trim() : 'Terminal Depot';
+          const stop4Time = bus?.arrivalTime || formatStopEta(stop2EtaMins + 38);
+
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-bold">
+              <div className="bg-forest-50 border border-forest-200 text-forest-900 p-3.5 rounded-2xl">
+                <span className="text-[10px] text-forest-700 block uppercase font-black">Stop 1 (Passed)</span>
+                <span className="text-sm font-black">{stop1Name}</span>
+                <span className="block text-[11px] text-forest-800 mt-1">Departed {stop1Time}</span>
+              </div>
+              <div className="bg-saffron-50 border border-saffron-300 text-saffron-950 p-3.5 rounded-2xl shadow-sm">
+                <span className="text-[10px] text-saffron-700 block uppercase font-black">Stop 2 (Approaching)</span>
+                <span className="text-sm font-black">{stop2Name}</span>
+                <span className="block text-[11px] text-saffron-900 mt-1">ETA: {stop2Time} ({stop2EtaMins} mins)</span>
+              </div>
+              <div className="bg-navy-50/60 border border-navy-100 text-navy-900 p-3.5 rounded-2xl">
+                <span className="text-[10px] text-navy-600 block uppercase font-black">Stop 3</span>
+                <span className="text-sm font-black">{stop3Name}</span>
+                <span className="block text-[11px] text-navy-700 mt-1">ETA: {stop3Time}</span>
+              </div>
+              <div className="bg-navy-50/60 border border-navy-100 text-navy-900 p-3.5 rounded-2xl">
+                <span className="text-[10px] text-navy-600 block uppercase font-black">Stop 4 (Terminal)</span>
+                <span className="text-sm font-black">{stop4Name}</span>
+                <span className="block text-[11px] text-navy-700 mt-1">ETA: {stop4Time}</span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
     </div>

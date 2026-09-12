@@ -78,8 +78,11 @@ export default function TicketModal({ bus, isOpen, onClose, onConfirmBooking, is
   const destCity = initialBookingData?.to || bus.to || 'Noida (Sector 62)';
   const farePerTicket = Number(initialBookingData?.fare || bus.fare) || 50;
   const totalAmount = farePerTicket * passengers;
-  const departureTime = initialBookingData?.departureTime || bus.departureTime || '08:15 AM';
-  const arrivalTime = initialBookingData?.arrivalTime || bus.arrivalTime || '09:15 AM';
+  const now = new Date();
+  const fallbackDep = new Date(now.getTime() + 15 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fallbackArr = new Date(now.getTime() + 75 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const departureTime = initialBookingData?.departureTime || bus.departureTime || fallbackDep;
+  const arrivalTime = initialBookingData?.arrivalTime || bus.arrivalTime || fallbackArr;
   const duration = initialBookingData?.duration || bus.duration || `${bus.gpsEtaMinutes || 20} mins`;
   const busType = initialBookingData?.busType || bus.busType || 'Jan Yatra Express';
   const regNumber = initialBookingData?.regNumber || bus.regNumber || 'DL-01-EV-5544';

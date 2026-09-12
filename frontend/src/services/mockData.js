@@ -216,7 +216,56 @@ export const INITIAL_ROUTES = [
   }
 ];
 
-export const INITIAL_BUSES = [
+export const formatTime = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
+export const parseDurationMinutes = (durationStr) => {
+  if (!durationStr) return 60;
+  let total = 0;
+  const hMatch = durationStr.match(/(\d+)\s*h/i);
+  const mMatch = durationStr.match(/(\d+)\s*m/i);
+  if (hMatch) total += parseInt(hMatch[1], 10) * 60;
+  if (mMatch) total += parseInt(mMatch[1], 10);
+  return total || 60;
+};
+
+// Generates dynamic, realistic departure and arrival times relative to current local time
+export const getDynamicTimesForBus = (bus, index = 0, now = new Date()) => {
+  const durationMins = parseDurationMinutes(bus.duration);
+  // Stagger in-service bus departures realistically (departed 12-36 mins ago)
+  const elapsedMins = Math.max(10, Math.min(durationMins - 15, Math.round(14 + (index * 5) % 25)));
+  const depDate = new Date(now.getTime() - elapsedMins * 60000);
+  const arrDate = new Date(depDate.getTime() + durationMins * 60000);
+
+  // Dynamic next-stop ETA (between 4 and 26 mins)
+  const dynamicGpsEta = Math.max(4, Math.min(26, Math.round(9 + (index * 3) % 17)));
+  const dynamicMlEta = Math.round(dynamicGpsEta * 1.25);
+
+  return {
+    departureTime: formatTime(depDate),
+    arrivalTime: formatTime(arrDate),
+    gpsEtaMinutes: dynamicGpsEta,
+    mlEtaMinutes: dynamicMlEta,
+  };
+};
+
+export const createDynamicBuses = (now = new Date()) => {
+  return RAW_INITIAL_BUSES.map((b, idx) => {
+    const dynamicTimes = getDynamicTimesForBus(b, idx, now);
+    return {
+      ...b,
+      ...dynamicTimes,
+    };
+  });
+};
+
+export const RAW_INITIAL_BUSES = [
   // 1. Delhi - Noida
   {
     id: 'BUS-100',
@@ -592,6 +641,8 @@ export const INITIAL_BUSES = [
   }
 ];
 
+export const INITIAL_BUSES = createDynamicBuses();
+
 export const SAMPLE_VOICE_COMMANDS = [
   { label: 'दिल्ली से नोएडा बस खोज', text: 'दिल्ली से नोएडा की बस चाहिए', lang: 'hi-IN' },
   { label: 'दिल्ली से नोएडा टिकट बुकिंग', text: 'दिल्ली से नोएडा का 2 टिकट बुक करो', lang: 'hi-IN' },
@@ -608,7 +659,7 @@ export const SAMPLE_SMS_QUERIES = [
 ];
 
 // Dynamic bus matcher strictly for the Delhi NCR region
-export const findBusesForRoute = (allBuses, fromCity, toCity) => {
+export const findBusesForRoute = (allBuses, fromCity, toCity, now = new Date()) => {
   if (!fromCity || !toCity) return allBuses;
 
   const getKeyArea = (str) => {
@@ -627,6 +678,24 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
   const fromArea = getKeyArea(fromCity);
   const toArea = getKeyArea(toCity);
 
+  const assignUpcomingTimes = (busesList) => {
+    return busesList.map((b, idx) => {
+      const durationMins = parseDurationMinutes(b.duration);
+      // Upcoming departures spaced every 15-20 minutes
+      const depOffsetMins = 8 + idx * 18;
+      const depDate = new Date(now.getTime() + depOffsetMins * 60000);
+      const arrDate = new Date(depDate.getTime() + durationMins * 60000);
+      const gpsEta = Math.max(3, depOffsetMins - 1);
+      return {
+        ...b,
+        departureTime: formatTime(depDate),
+        arrivalTime: formatTime(arrDate),
+        gpsEtaMinutes: gpsEta,
+        mlEtaMinutes: Math.max(5, Math.round(gpsEta * 1.25)),
+      };
+    });
+  };
+
   // 1. Direct matches in current fleet
   const directMatches = allBuses.filter((b) => {
     const bFrom = getKeyArea(b.from);
@@ -635,7 +704,7 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
   });
 
   if (directMatches.length > 0) {
-    return directMatches;
+    return assignUpcomingTimes(directMatches);
   }
 
   // 2. Reverse matches (return trips in the same corridor)
@@ -646,7 +715,7 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
   });
 
   if (reverseMatches.length > 0) {
-    return reverseMatches.map((b, idx) => ({
+    const reversed = reverseMatches.map((b, idx) => ({
       ...b,
       id: `${b.id}-REV-${idx + 1}`,
       regNumber: b.regNumber.replace(/(\d{2})$/, (_, d) => String((Number(d) + 17) % 99).padStart(2, '0')),
@@ -654,9 +723,8 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
       from: fromCity,
       to: toCity,
       nextStop: toCity.split('(')[0].trim(),
-      departureTime: '08:45 AM',
-      arrivalTime: '09:50 AM',
     }));
+    return assignUpcomingTimes(reversed);
   }
 
   // 3. Intermediate stop / corridor segment matches
@@ -669,7 +737,7 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
   });
 
   if (segmentMatches.length > 0) {
-    return segmentMatches;
+    return assignUpcomingTimes(segmentMatches);
   }
 
   // 4. Dynamic realistic synthesis for any other combination within Delhi NCR
@@ -699,6 +767,14 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
 
   const hashSeed = Math.abs(fromName.length * 19 + toName.length * 29);
 
+  const dur1 = Math.max(25, Math.round(approxKm * 1.6));
+  const depDate1 = new Date(now.getTime() + 10 * 60000);
+  const arrDate1 = new Date(depDate1.getTime() + dur1 * 60000);
+
+  const dur2 = Math.max(25, Math.round(approxKm * 1.5));
+  const depDate2 = new Date(now.getTime() + 28 * 60000);
+  const arrDate2 = new Date(depDate2.getTime() + dur2 * 60000);
+
   return [
     {
       id: `BUS-NCR-${hashSeed}`,
@@ -715,15 +791,15 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
       from: fromCity,
       to: toCity,
       nextStop: `${toName} Ring Road`,
-      departureTime: '08:15 AM',
-      arrivalTime: '09:05 AM',
-      duration: `${Math.max(25, Math.round(approxKm * 1.6))} mins`,
+      departureTime: formatTime(depDate1),
+      arrivalTime: formatTime(arrDate1),
+      duration: `${dur1} mins`,
       speed: 50,
       occupancy: 'HALF',
       status: 'ACTIVE',
-      gpsEtaMinutes: 16,
-      mlEtaMinutes: 20,
-      historicalDelayFactor: '+4 mins (Peak NCR arterial traffic)',
+      gpsEtaMinutes: 8,
+      mlEtaMinutes: 11,
+      historicalDelayFactor: '+3 mins (Peak NCR arterial traffic)',
       lastSyncTime: 'Just now',
       heading: 180,
       fare: baseFare,
@@ -744,9 +820,9 @@ export const findBusesForRoute = (allBuses, fromCity, toCity) => {
       from: fromCity,
       to: toCity,
       nextStop: `${toName} Main Terminal`,
-      departureTime: '08:45 AM',
-      arrivalTime: '09:30 AM',
-      duration: `${Math.max(25, Math.round(approxKm * 1.5))} mins`,
+      departureTime: formatTime(depDate2),
+      arrivalTime: formatTime(arrDate2),
+      duration: `${dur2} mins`,
       speed: 54,
       occupancy: 'EMPTY',
       status: 'ACTIVE',

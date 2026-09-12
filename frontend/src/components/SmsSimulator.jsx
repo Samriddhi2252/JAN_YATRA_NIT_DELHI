@@ -1,55 +1,153 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Phone, Send, MessageSquare, Sparkles } from 'lucide-react';
-import { SAMPLE_SMS_QUERIES } from '../services/mockData';
+import { SAMPLE_SMS_QUERIES, INITIAL_BUSES, INITIAL_ROUTES } from '../services/mockData';
 
 export default function SmsSimulator() {
-  const [smsInput, setSmsInput] = useState('BUS 101 ETA');
-  const [smsMessages, setSmsMessages] = useState([
-    {
-      sender: 'user',
-      text: 'BUS 101 ETA',
-      time: '10:02 AM'
-    },
-    {
-      sender: 'system',
-      text: 'JAN YATRA: Bus HR-46-AT-9081 (Rohtak-Hisar) is 14 mins away at Meham. ML Predicted ETA: 21 mins due to Hansi toll bottleneck.',
-      time: '10:02 AM'
-    }
-  ]);
+  const messagesEndRef = useRef(null);
+  const [smsInput, setSmsInput] = useState('');
+  const [smsMessages, setSmsMessages] = useState(() => {
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return [
+      {
+        sender: 'user',
+        text: 'BUS 100 ETA',
+        time: nowTime
+      },
+      {
+        sender: 'system',
+        text: 'JAN YATRA: Bus DL-01-PC-7788 (Delhi - Noida Express) is 12 mins away. Next stop: Sector 18 Noida. ML Predicted ETA: 15 mins (Akshardham flyover traffic). Fare: Rs 45. Seats: Half Full.',
+        time: nowTime
+      }
+    ];
+  });
 
-  const handleSendSms = (e) => {
-    e.preventDefault();
-    if (!smsInput.trim()) return;
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [smsMessages]);
+
+  const processSmsCommand = (rawText) => {
+    const text = (rawText || '').trim().toUpperCase();
+
+    // 1. Bus ETA Query: e.g. "BUS 100 ETA", "BUS 105 ETA"
+    if (text.includes('ETA') || text.startsWith('BUS')) {
+      const busNumberMatch = text.match(/\b(?:BUS\s*[-]?\s*)?(\d{3}[A-Z]?)\b/i) || text.match(/\d+/);
+      const busQuery = busNumberMatch ? busNumberMatch[0].replace(/\s+/g, '') : '100';
+
+      const foundBus = INITIAL_BUSES.find((b) => 
+        b.id.toUpperCase().includes(busQuery) || 
+        b.regNumber.toUpperCase().includes(busQuery)
+      ) || INITIAL_BUSES[0];
+
+      const occupancyText = 
+        foundBus.occupancy === 'EMPTY' ? 'Available (>75% empty)' :
+        foundBus.occupancy === 'HALF' ? 'Seats Available (Half Full)' :
+        foundBus.occupancy === 'FULL' ? 'Filling Fast (Few seats left)' :
+        'Overcrowded';
+
+      return `JAN YATRA: Bus ${foundBus.regNumber} (${foundBus.routeName}). Current Stop: ${foundBus.from.split('(')[0].trim()}. Next: ${foundBus.nextStop}. GPS ETA: ${foundBus.gpsEtaMinutes}m | ML Traffic ETA: ${foundBus.mlEtaMinutes}m. Seats: ${occupancyText}. Fare: Rs ${foundBus.fare}.`;
+    }
+
+    // 2. Ticket Booking: e.g. "BOOK DELHI GURUGRAM 2", "BOOK NOIDA 1"
+    if (text.includes('BOOK')) {
+      const seatMatch = text.match(/\b([1-9])\b(?:\s*(?:SEATS?|TICKETS?))?/);
+      const seats = seatMatch ? parseInt(seatMatch[1], 10) : 2;
+
+      let matchedRoute = INITIAL_ROUTES[0];
+      if (text.includes('GURUGRAM') || text.includes('GURGAON')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-115') || INITIAL_ROUTES[0];
+      } else if (text.includes('GREATER NOIDA') || text.includes('PARI CHOWK')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-105') || INITIAL_ROUTES[0];
+      } else if (text.includes('NOIDA') && text.includes('ROHINI')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-106') || INITIAL_ROUTES[0];
+      } else if (text.includes('NOIDA')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-100') || INITIAL_ROUTES[0];
+      } else if (text.includes('GHAZIABAD')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-116') || INITIAL_ROUTES[0];
+      } else if (text.includes('FARIDABAD')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-117') || INITIAL_ROUTES[0];
+      }
+
+      const totalFare = matchedRoute.fare * seats;
+      const passNum = Math.floor(1000 + Math.random() * 9000);
+      const passId = `JYSMS-${passNum}`;
+
+      return `JAN YATRA TICKET CONFIRMED! Pass ID: ${passId}. Route: ${matchedRoute.name}. Seats: ${seats}. Total Fare: Rs ${totalFare}. Conductor Verification PIN: #${passNum.toString().slice(-3)}. Show this SMS upon boarding.`;
+    }
+
+    // 3. Schedule Query: e.g. "ROHINI NOIDA SCHEDULE"
+    if (text.includes('SCHEDULE') || text.includes('TIMING')) {
+      let matchedRoute = INITIAL_ROUTES[0];
+      if (text.includes('ROHINI') && text.includes('NOIDA')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-106') || INITIAL_ROUTES[0];
+      } else if (text.includes('GURUGRAM') || text.includes('GURGAON')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-115') || INITIAL_ROUTES[0];
+      } else if (text.includes('GHAZIABAD')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-116') || INITIAL_ROUTES[0];
+      } else if (text.includes('FARIDABAD')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-117') || INITIAL_ROUTES[0];
+      } else if (text.includes('GREATER NOIDA')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-105') || INITIAL_ROUTES[0];
+      }
+
+      const now = new Date();
+      const formatMin = (m) => new Date(now.getTime() + m * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const t1 = formatMin(12);
+      const t2 = formatMin(35);
+      const t3 = formatMin(60);
+      const t4 = formatMin(90);
+
+      return `JAN YATRA SCHEDULE [${matchedRoute.name} - ${matchedRoute.code}]: Upcoming Departures Today: ${t1}, ${t2}, ${t3}, ${t4}. Frequency: Every 20-25m. Fare: Rs ${matchedRoute.fare}. Next departure in 12 mins.`;
+    }
+
+    // 4. Corridor Status Query: e.g. "GHAZIABAD NOIDA STATUS"
+    if (text.includes('STATUS') || text.includes('LIVE') || text.includes('CORRIDOR')) {
+      let matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-118') || INITIAL_ROUTES[0];
+      if (text.includes('ROHINI')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-106') || INITIAL_ROUTES[0];
+      } else if (text.includes('GURUGRAM')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-115') || INITIAL_ROUTES[0];
+      } else if (text.includes('GHAZIABAD') && text.includes('NOIDA')) {
+        matchedRoute = INITIAL_ROUTES.find((r) => r.id === 'R-118') || INITIAL_ROUTES[0];
+      }
+
+      const activeBus = INITIAL_BUSES.find((b) => b.routeId === matchedRoute.id) || INITIAL_BUSES[0];
+
+      return `JAN YATRA LIVE STATUS: Corridor [${matchedRoute.name}] is ACTIVE & RUNNING. Frequency: Every 15 mins. Active fleet: 8 buses. Next bus (${activeBus.regNumber}) reaching ${activeBus.nextStop} in ${activeBus.mlEtaMinutes}m. Fare: Rs ${matchedRoute.fare}.`;
+    }
+
+    // Default fallback
+    return 'JAN YATRA SMS GATEWAY: Command not recognized. Send "BUS [ID] ETA", "BOOK [ROUTE] [SEATS]", "[ROUTE] SCHEDULE", or "[ROUTE] STATUS" to 56161.';
+  };
+
+  const handleExecuteCommand = (cmdText) => {
+    if (!cmdText || !cmdText.trim()) return;
+
+    const formattedCmd = cmdText.trim().toUpperCase();
+    const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const userMsg = {
       sender: 'user',
-      text: smsInput.toUpperCase(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      text: formattedCmd,
+      time: currentTime
     };
 
     setSmsMessages((prev) => [...prev, userMsg]);
-    const inputUpper = smsInput.toUpperCase();
     setSmsInput('');
 
     setTimeout(() => {
-      let replyText = 'JAN YATRA SMS: Invalid command. Send "BUS [ID] ETA" or "BOOK [ROUTE] [SEATS]" to 56161.';
-
-      if (inputUpper.includes('ETA') || inputUpper.includes('BUS')) {
-        replyText = 'JAN YATRA: Bus HR-46-AT-9081 (Rohtak-Hisar Express) Next Stop: Hansi. GPS ETA: 14m, ML ETA: 21m. Seats: Half Full.';
-      } else if (inputUpper.includes('BOOK') || inputUpper.includes('R101')) {
-        replyText = 'JAN YATRA TICKET CONFIRMED! Pass ID: JYSMS-8841. Route: Rohtak-Hisar. 2 Seats. Fare: Rs 220. Show code to conductor.';
-      } else if (inputUpper.includes('SCHEDULE') || inputUpper.includes('ROHTAK')) {
-        replyText = 'JAN YATRA SCHEDULE (Rohtak-Hisar): 08:30 AM, 10:15 AM, 12:00 PM, 02:30 PM. Fare: Rs 110.';
-      }
-
+      const replyText = processSmsCommand(formattedCmd);
       const sysMsg = {
         sender: 'system',
         text: replyText,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
-
       setSmsMessages((prev) => [...prev, sysMsg]);
-    }, 600);
+    }, 350);
+  };
+
+  const handleSendSms = (e) => {
+    e.preventDefault();
+    handleExecuteCommand(smsInput);
   };
 
   return (
@@ -102,6 +200,7 @@ export default function SmsSimulator() {
                 </div>
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* SMS Input Box */}
@@ -139,7 +238,7 @@ export default function SmsSimulator() {
               {SAMPLE_SMS_QUERIES.map((sample, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setSmsInput(sample.command)}
+                  onClick={() => handleExecuteCommand(sample.command)}
                   className="w-full text-left p-3.5 rounded-2xl bg-navy-50/50 hover:bg-saffron-50 border border-navy-100 hover:border-saffron-300 transition-all text-xs font-bold text-navy-900 flex items-center justify-between"
                 >
                   <div>
@@ -165,3 +264,4 @@ export default function SmsSimulator() {
     </div>
   );
 }
+

@@ -9,14 +9,14 @@ import SmsSimulator from './components/SmsSimulator';
 import VoiceAssistant from './components/VoiceAssistant';
 import TicketModal from './components/TicketModal';
 import PitchModal from './components/PitchModal';
-import { INITIAL_BUSES, INITIAL_ROUTES } from './services/mockData';
+import { INITIAL_BUSES, INITIAL_ROUTES, createDynamicBuses, getDynamicTimesForBus } from './services/mockData';
 import { saveBookingLocally, getOfflineQueue, syncOfflineQueue } from './services/db';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeView, setActiveView] = useState('commuter');
   const [isOffline, setIsOffline] = useState(false);
-  const [buses, setBuses] = useState(INITIAL_BUSES);
+  const [buses, setBuses] = useState(() => createDynamicBuses());
   const [routes] = useState(INITIAL_ROUTES);
   
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
@@ -64,6 +64,24 @@ export default function App() {
     }, 4000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Periodically refresh departure and arrival times to stay in lockstep with the real-world clock
+  useEffect(() => {
+    const timeSyncInterval = setInterval(() => {
+      setBuses((prevBuses) =>
+        prevBuses.map((b, idx) => {
+          const dynamicTimes = getDynamicTimesForBus(b, idx, new Date());
+          return {
+            ...b,
+            departureTime: dynamicTimes.departureTime,
+            arrivalTime: dynamicTimes.arrivalTime,
+          };
+        })
+      );
+    }, 60000);
+
+    return () => clearInterval(timeSyncInterval);
   }, []);
 
   const showToast = (msg) => {
