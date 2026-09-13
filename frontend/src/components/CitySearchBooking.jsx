@@ -94,9 +94,6 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     const selectedDate = e.target.value;
     const finalDate = (selectedDate && selectedDate < todayStr) ? todayStr : selectedDate;
     setTravelDate(finalDate);
-    if (onSelectSearchRoute) {
-      onSelectSearchRoute(fromCity, toCity, passengers, finalDate);
-    }
   };
 
   const handleOpenDatePicker = () => {
@@ -115,44 +112,10 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
 
   const handleFromCityChange = (newFrom) => {
     setFromCity(newFrom);
-    if (onSelectSearchRoute) {
-      onSelectSearchRoute(newFrom, toCity, passengers, travelDate);
-    }
-    const matched = findBusesForRoute(INITIAL_BUSES, newFrom, toCity);
-    const bus = matched && matched.length > 0 ? matched[0] : null;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('janyatra:route-changed', {
-          detail: { from: newFrom, to: toCity, bus }
-        })
-      );
-      if (bus) {
-        window.dispatchEvent(
-          new CustomEvent('janyatra:bus-selected', { detail: bus })
-        );
-      }
-    }
   };
 
   const handleToCityChange = (newTo) => {
     setToCity(newTo);
-    if (onSelectSearchRoute) {
-      onSelectSearchRoute(fromCity, newTo, passengers, travelDate);
-    }
-    const matched = findBusesForRoute(INITIAL_BUSES, fromCity, newTo);
-    const bus = matched && matched.length > 0 ? matched[0] : null;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('janyatra:route-changed', {
-          detail: { from: fromCity, to: newTo, bus }
-        })
-      );
-      if (bus) {
-        window.dispatchEvent(
-          new CustomEvent('janyatra:bus-selected', { detail: bus })
-        );
-      }
-    }
   };
 
   const handleSwapCities = () => {
@@ -160,23 +123,6 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     const tempTo = fromCity;
     setFromCity(tempFrom);
     setToCity(tempTo);
-    if (onSelectSearchRoute) {
-      onSelectSearchRoute(tempFrom, tempTo, passengers, travelDate);
-    }
-    const matched = findBusesForRoute(INITIAL_BUSES, tempFrom, tempTo);
-    const bus = matched && matched.length > 0 ? matched[0] : null;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('janyatra:route-changed', {
-          detail: { from: tempFrom, to: tempTo, bus }
-        })
-      );
-      if (bus) {
-        window.dispatchEvent(
-          new CustomEvent('janyatra:bus-selected', { detail: bus })
-        );
-      }
-    }
   };
 
   const handleSearchBuses = (e) => {
