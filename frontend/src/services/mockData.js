@@ -658,6 +658,160 @@ export const SAMPLE_SMS_QUERIES = [
   { command: 'GHAZIABAD NOIDA STATUS', description: 'Get schedule for Ghaziabad-Noida link' },
 ];
 
+// Generate realistic road-following arterial highway coordinates between Delhi NCR hubs
+export const getRoadFollowingCoordinates = (fromCity, toCity, fromCoord, toCoord) => {
+  const f = (fromCity || '').toLowerCase();
+  const t = (toCity || '').toLowerCase();
+
+  // Greater Noida <-> Ghaziabad arterial corridor (Surajpur, Gaur City, NH-9, Lal Kuan)
+  if ((f.includes('greater noida') && t.includes('ghaziabad')) || (f.includes('ghaziabad') && t.includes('greater noida'))) {
+    const coords = [
+      [28.4671, 77.5138], // Pari Chowk
+      [28.4950, 77.4980], // Surajpur Road
+      [28.5320, 77.4720], // Ecotech
+      [28.5780, 77.4520], // Bisrakh / Gr Noida West
+      [28.6080, 77.4410], // Gaur City / Char Murti
+      [28.6280, 77.4320], // Crossings Republik
+      [28.6430, 77.4320], // NH-9 / NH-24 Bypass
+      [28.6580, 77.4390], // Lal Kuan
+      [28.6692, 77.4538]  // Ghaziabad Old Stand
+    ];
+    return f.includes('greater noida') ? coords : [...coords].reverse();
+  }
+
+  // Delhi <-> Noida (Ring Road, Akshardham, Chilla, Atta, Sec 62)
+  if ((f.includes('delhi') && t.includes('noida') && !t.includes('greater')) || (f.includes('noida') && t.includes('delhi') && !f.includes('greater'))) {
+    const coords = [
+      [28.6667, 77.2333],
+      [28.6360, 77.2510],
+      [28.6127, 77.2773],
+      [28.5870, 77.3160],
+      [28.5700, 77.3200],
+      [28.6010, 77.3550],
+      [28.6250, 77.3750]
+    ];
+    return f.includes('delhi') ? coords : [...coords].reverse();
+  }
+
+  // Delhi <-> Greater Noida (Noida Expressway, Pari Chowk)
+  if ((f.includes('delhi') && t.includes('greater noida')) || (f.includes('greater noida') && t.includes('delhi'))) {
+    const coords = [
+      [28.6667, 77.2333],
+      [28.6360, 77.2510],
+      [28.6127, 77.2773],
+      [28.5680, 77.3280],
+      [28.5260, 77.3790],
+      [28.5080, 77.4170],
+      [28.4671, 77.5138]
+    ];
+    return f.includes('delhi') ? coords : [...coords].reverse();
+  }
+
+  // Delhi / Rohini <-> Gurugram (NH-48, Dhaula Kuan, Aerocity, Cyber Hub)
+  if (((f.includes('delhi') || f.includes('rohini')) && t.includes('gurugram')) || (f.includes('gurugram') && (t.includes('delhi') || t.includes('rohini')))) {
+    const coords = [
+      [28.5921, 77.1610],
+      [28.5440, 77.1260],
+      [28.5050, 77.0970],
+      [28.4986, 77.0890],
+      [28.4720, 77.0720]
+    ];
+    return (f.includes('delhi') || f.includes('rohini')) ? coords : [...coords].reverse();
+  }
+
+  // Gurugram <-> Faridabad (Gwal Pahari, Pali Toll, Bata Chowk)
+  if ((f.includes('gurugram') && t.includes('faridabad')) || (f.includes('faridabad') && t.includes('gurugram'))) {
+    const coords = [
+      [28.4720, 77.0720],
+      [28.4780, 77.1250],
+      [28.4550, 77.1650],
+      [28.4200, 77.2200],
+      [28.3980, 77.2880],
+      [28.3842, 77.3094]
+    ];
+    return f.includes('gurugram') ? coords : [...coords].reverse();
+  }
+
+  // Delhi <-> Faridabad (Mathura Road, Ashram, Badarpur)
+  if ((f.includes('delhi') && t.includes('faridabad')) || (f.includes('faridabad') && t.includes('delhi'))) {
+    const coords = [
+      [28.6667, 77.2333],
+      [28.6289, 77.2410],
+      [28.5700, 77.2600],
+      [28.4900, 77.3000],
+      [28.4089, 77.3178]
+    ];
+    return f.includes('delhi') ? coords : [...coords].reverse();
+  }
+
+  // Noida <-> Ghaziabad (Sec 62, CISF Road, Vasundhara, Old Bus Stand)
+  if ((f.includes('noida') && t.includes('ghaziabad')) || (f.includes('ghaziabad') && t.includes('noida'))) {
+    const coords = [
+      [28.6250, 77.3750],
+      [28.6410, 77.3910],
+      [28.6600, 77.4100],
+      [28.6692, 77.4538]
+    ];
+    return f.includes('noida') ? coords : [...coords].reverse();
+  }
+
+  // Delhi / Anand Vihar <-> Ghaziabad (Mohan Nagar, Hindon)
+  if (((f.includes('delhi') || f.includes('anand')) && t.includes('ghaziabad')) || (f.includes('ghaziabad') && (t.includes('delhi') || t.includes('anand')))) {
+    const coords = [
+      [28.6502, 77.3150],
+      [28.6830, 77.3780],
+      [28.6750, 77.4200],
+      [28.6692, 77.4538]
+    ];
+    return (f.includes('delhi') || f.includes('anand')) ? coords : [...coords].reverse();
+  }
+
+  // Rohini <-> Noida (Outer Ring Road, ISBT Kashmiri Gate, Akshardham, Sector 62)
+  if ((f.includes('rohini') && t.includes('noida')) || (f.includes('noida') && t.includes('rohini'))) {
+    const coords = [
+      [28.7166, 77.1245],
+      [28.6989, 77.1412],
+      [28.6667, 77.2333],
+      [28.6360, 77.2510],
+      [28.6127, 77.2773],
+      [28.5870, 77.3160],
+      [28.6250, 77.3750]
+    ];
+    return f.includes('rohini') ? coords : [...coords].reverse();
+  }
+
+  // Rohini <-> Greater Noida (Outer Ring Road, Kashmiri Gate, Akshardham, Noida Expressway, Pari Chowk)
+  if ((f.includes('rohini') && t.includes('greater noida')) || (f.includes('greater noida') && t.includes('rohini'))) {
+    const coords = [
+      [28.7166, 77.1245],
+      [28.7077, 77.1757],
+      [28.6667, 77.2333],
+      [28.6127, 77.2773],
+      [28.5680, 77.3280],
+      [28.5260, 77.3790],
+      [28.5080, 77.4170],
+      [28.4671, 77.5138]
+    ];
+    return f.includes('rohini') ? coords : [...coords].reverse();
+  }
+
+  // Smooth arterial curve through nearest NCR highway corridor
+  const c1 = fromCoord || [28.6139, 77.2090];
+  const c2 = toCoord || [28.5355, 77.3910];
+  const midLat = (c1[0] + c2[0]) / 2;
+  const midLng = (c1[1] + c2[1]) / 2;
+  const offsetLat = (c1[1] - c2[1]) * 0.05;
+  const offsetLng = (c2[0] - c1[0]) * 0.05;
+
+  return [
+    c1,
+    [Number((c1[0] * 0.65 + (midLat + offsetLat) * 0.35).toFixed(4)), Number((c1[1] * 0.65 + (midLng + offsetLng) * 0.35).toFixed(4))],
+    [Number((midLat + offsetLat).toFixed(4)), Number((midLng + offsetLng).toFixed(4))],
+    [Number((c2[0] * 0.65 + (midLat + offsetLat) * 0.35).toFixed(4)), Number((c2[1] * 0.65 + (midLng + offsetLng) * 0.35).toFixed(4))],
+    c2
+  ];
+};
+
 // Dynamic bus matcher strictly for the Delhi NCR region
 export const findBusesForRoute = (allBuses, fromCity, toCity, now = new Date()) => {
   if (!fromCity || !toCity) return allBuses;
@@ -775,6 +929,10 @@ export const findBusesForRoute = (allBuses, fromCity, toCity, now = new Date()) 
   const depDate2 = new Date(now.getTime() + 28 * 60000);
   const arrDate2 = new Date(depDate2.getTime() + dur2 * 60000);
 
+  const roadCoords = getRoadFollowingCoordinates(fromCity, toCity, fromCoord, toCoord);
+  const loc1 = roadCoords[Math.min(roadCoords.length - 1, Math.max(1, Math.floor(roadCoords.length * 0.35)))];
+  const loc2 = roadCoords[Math.min(roadCoords.length - 1, Math.max(1, Math.floor(roadCoords.length * 0.68)))];
+
   return [
     {
       id: `BUS-NCR-${hashSeed}`,
@@ -784,10 +942,10 @@ export const findBusesForRoute = (allBuses, fromCity, toCity, now = new Date()) 
       driver: 'Rajinder Kumar',
       driverPhone: '+91 98110 55432',
       currentLocation: {
-        lat: Number((fromCoord[0] * 0.7 + toCoord[0] * 0.3).toFixed(4)),
-        lng: Number((fromCoord[1] * 0.7 + toCoord[1] * 0.3).toFixed(4)),
+        lat: loc1[0],
+        lng: loc1[1],
       },
-      routeCoordinates: [fromCoord, [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2], toCoord],
+      routeCoordinates: roadCoords,
       from: fromCity,
       to: toCity,
       nextStop: `${toName} Ring Road`,
@@ -813,10 +971,10 @@ export const findBusesForRoute = (allBuses, fromCity, toCity, now = new Date()) 
       driver: 'Subhash Chandra',
       driverPhone: '+91 98101 44321',
       currentLocation: {
-        lat: Number((fromCoord[0] * 0.4 + toCoord[0] * 0.6).toFixed(4)),
-        lng: Number((fromCoord[1] * 0.4 + toCoord[1] * 0.6).toFixed(4)),
+        lat: loc2[0],
+        lng: loc2[1],
       },
-      routeCoordinates: [fromCoord, [(fromCoord[0] + toCoord[0]) / 2, (fromCoord[1] + toCoord[1]) / 2], toCoord],
+      routeCoordinates: roadCoords,
       from: fromCity,
       to: toCity,
       nextStop: `${toName} Main Terminal`,
@@ -833,6 +991,6 @@ export const findBusesForRoute = (allBuses, fromCity, toCity, now = new Date()) 
       heading: 160,
       fare: Math.round(baseFare * 1.15),
       busType: 'AC Low-Floor Feeder',
-    }
+    },
   ];
 };

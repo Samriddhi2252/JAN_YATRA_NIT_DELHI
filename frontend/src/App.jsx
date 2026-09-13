@@ -14,6 +14,7 @@ import MyTicketsView from './components/MyTicketsView';
 import RoleAuthModal from './components/RoleAuthModal';
 import OfflineReconnectionModal from './components/OfflineReconnectionModal';
 import LiveManifestView from './components/LiveManifestView';
+import ErrorBoundary from './components/ErrorBoundary';
 import { INITIAL_BUSES, INITIAL_ROUTES, createDynamicBuses, getDynamicTimesForBus } from './services/mockData';
 import { saveBookingLocally, getOfflineQueue, syncOfflineQueue, getStoredBookings } from './services/db';
 
@@ -380,37 +381,42 @@ export default function App() {
           <>
             {/* Commuter Map & Live Tracker */}
             {activeView === 'commuter' && (
-              <CommuterView
-                buses={buses}
-                routes={routes}
-                currentUser={currentUser}
-                onOpenTicketModal={(bus, autoData) => {
-                  setAutoBookingData(autoData || null);
-                  let targetBus = bus;
-                  if (!targetBus && autoData?.from && autoData?.to) {
-                    const direct = buses.filter((b) => 
-                      b.from?.toLowerCase().includes(autoData.from.toLowerCase().split(' ')[0]) &&
-                      b.to?.toLowerCase().includes(autoData.to.toLowerCase().split(' ')[0])
-                    );
-                    targetBus = direct[0] || buses[0];
-                  }
-                  if (targetBus) {
-                    setTicketModalBus({
-                      ...targetBus,
-                      from: autoData?.from || targetBus.from,
-                      to: autoData?.to || targetBus.to,
-                      departureTime: autoData?.departureTime || targetBus.departureTime,
-                      arrivalTime: autoData?.arrivalTime || targetBus.arrivalTime,
-                      duration: autoData?.duration || targetBus.duration,
-                      fare: autoData?.fare || targetBus.fare,
-                      travelDate: autoData?.travelDate || targetBus.travelDate,
-                    });
-                  } else {
-                    setTicketModalBus(buses[0]);
-                  }
-                }}
-                isOffline={isOffline}
-              />
+              <ErrorBoundary
+                title="Commuter Corridor Explorer"
+                message="An unexpected issue occurred while rendering the commuter dashboard. Click below to safely restore the corridor view."
+              >
+                <CommuterView
+                  buses={buses}
+                  routes={routes}
+                  currentUser={currentUser}
+                  onOpenTicketModal={(bus, autoData) => {
+                    setAutoBookingData(autoData || null);
+                    let targetBus = bus;
+                    if (!targetBus && autoData?.from && autoData?.to) {
+                      const direct = buses.filter((b) => 
+                        b.from?.toLowerCase().includes(autoData.from.toLowerCase().split(' ')[0]) &&
+                        b.to?.toLowerCase().includes(autoData.to.toLowerCase().split(' ')[0])
+                      );
+                      targetBus = direct[0] || buses[0];
+                    }
+                    if (targetBus) {
+                      setTicketModalBus({
+                        ...targetBus,
+                        from: autoData?.from || targetBus.from,
+                        to: autoData?.to || targetBus.to,
+                        departureTime: autoData?.departureTime || targetBus.departureTime,
+                        arrivalTime: autoData?.arrivalTime || targetBus.arrivalTime,
+                        duration: autoData?.duration || targetBus.duration,
+                        fare: autoData?.fare || targetBus.fare,
+                        travelDate: autoData?.travelDate || targetBus.travelDate,
+                      });
+                    } else {
+                      setTicketModalBus(buses[0]);
+                    }
+                  }}
+                  isOffline={isOffline}
+                />
+              </ErrorBoundary>
             )}
 
             {/* My Confirmed Tickets & Passes */}
