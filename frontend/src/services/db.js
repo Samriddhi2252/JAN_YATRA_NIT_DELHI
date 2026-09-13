@@ -80,8 +80,8 @@ export const saveBookingLocally = (booking, isOffline = false) => {
     const now = Date.now();
     const arrivalEtaTimestamp = booking.arrivalEtaTimestamp || (now + etaMins * 60 * 1000);
 
-    const paymentMode = booking.paymentMode || (isOffline ? 'CASH_TO_CONDUCTOR' : 'ONLINE_QR');
-    const status = isOffline ? 'PENDING_OFFLINE' : 'CONFIRMED';
+    const paymentMode = isOffline ? 'DEFERRED_ONLINE' : (booking.paymentMode || 'ONLINE_QR');
+    const status = isOffline ? 'QUEUED_OFFLINE' : 'CONFIRMED';
 
     const newBooking = {
       ...booking,
@@ -104,9 +104,58 @@ export const saveBookingLocally = (booking, isOffline = false) => {
       localStorage.setItem(DB_KEYS.OFFLINE_QUEUE, JSON.stringify(queue));
     }
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('jan_yatra_offline_queue_updated', {
+          detail: { expiredCount: 0, remainingCount: isOffline ? getOfflineQueue().length : 0 },
+        })
+      );
+    }
+
     return newBooking;
   } catch (e) {
     console.error('Failed to save booking locally', e);
+    return null;
+  }
+};
+
+export const completeOfflinePaymentLocally = (ticketId) => {
+  try {
+    const raw = localStorage.getItem(DB_KEYS.BOOKINGS);
+    const bookings = raw ? JSON.parse(raw) : [];
+    let updatedTicket = null;
+
+    const updatedBookings = bookings.map((b) => {
+      if (b.id === ticketId || b.ticketHash === ticketId) {
+        updatedTicket = {
+          ...b,
+          status: 'CONFIRMED',
+          paymentMode: 'ONLINE_QR',
+          confirmedAt: new Date().toISOString(),
+        };
+        return updatedTicket;
+      }
+      return b;
+    });
+
+    localStorage.setItem(DB_KEYS.BOOKINGS, JSON.stringify(updatedBookings));
+
+    // Remove from offline queue
+    const queue = getOfflineQueue();
+    const remainingQueue = queue.filter((item) => item.id !== ticketId && item.ticketHash !== ticketId);
+    localStorage.setItem(DB_KEYS.OFFLINE_QUEUE, JSON.stringify(remainingQueue));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('jan_yatra_offline_queue_updated', {
+          detail: { expiredCount: 0, remainingCount: remainingQueue.length },
+        })
+      );
+    }
+
+    return updatedTicket;
+  } catch (e) {
+    console.error('Failed to complete offline payment locally', e);
     return null;
   }
 };
@@ -124,28 +173,7 @@ export const getOfflineQueue = () => {
 export const syncOfflineQueue = () => {
   cleanExpiredOfflineBookings();
   const queue = getOfflineQueue();
-  if (queue.length === 0) return { count: 0, synced: [] };
-
-  const bookings = getStoredBookings();
-  const updatedBookings = bookings.map((b) => {
-    if (b.status === 'PENDING_OFFLINE' || b.status === 'QUEUED_OFFLINE') {
-      return { ...b, status: 'CONFIRMED', syncedAt: new Date().toISOString() };
-    }
-    return b;
-  });
-
-  localStorage.setItem(DB_KEYS.BOOKINGS, JSON.stringify(updatedBookings));
-  localStorage.setItem(DB_KEYS.OFFLINE_QUEUE, JSON.stringify([]));
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('jan_yatra_offline_queue_updated', {
-        detail: { expiredCount: 0, remainingCount: 0 },
-      })
-    );
-  }
-
-  return { count: queue.length, synced: queue };
+  return { count: queue.length, pendingTickets: queue };
 };
 
 // Background sync interval check: runs continuously to invalidate stale offline requests

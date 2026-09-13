@@ -9,21 +9,49 @@ import SmsSimulator from './components/SmsSimulator';
 import VoiceAssistant from './components/VoiceAssistant';
 import TicketModal from './components/TicketModal';
 import PitchModal from './components/PitchModal';
+import ConductorLogin from './components/ConductorLogin';
+import MyTicketsView from './components/MyTicketsView';
+import RoleAuthModal from './components/RoleAuthModal';
+import OfflineReconnectionModal from './components/OfflineReconnectionModal';
+import LiveManifestView from './components/LiveManifestView';
 import { INITIAL_BUSES, INITIAL_ROUTES, createDynamicBuses, getDynamicTimesForBus } from './services/mockData';
-import { saveBookingLocally, getOfflineQueue, syncOfflineQueue } from './services/db';
+import { saveBookingLocally, getOfflineQueue, syncOfflineQueue, getStoredBookings } from './services/db';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [currentUser, setCurrentUser] = useState({
+    name: 'Commuter User',
+    contact: '',
+    role: 'COMMUTER',
+  });
   const [activeView, setActiveView] = useState('commuter');
   const [isOffline, setIsOffline] = useState(false);
   const [buses, setBuses] = useState(() => createDynamicBuses());
   const [routes] = useState(INITIAL_ROUTES);
   
+  // Portal & Conductor Authentication state
+  const [isConductorLoggedIn, setIsConductorLoggedIn] = useState(false);
+  const [conductorUser, setConductorUser] = useState(null);
+  const [ticketsCount, setTicketsCount] = useState(() => getStoredBookings().length);
+
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [reconnectionModalTicket, setReconnectionModalTicket] = useState(null);
   const [ticketModalBus, setTicketModalBus] = useState(null);
   const [autoBookingData, setAutoBookingData] = useState(null);
   const [isPitchOpen, setIsPitchOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Sync ticket count when local storage or offline queue changes
+  useEffect(() => {
+    const updateCount = () => setTicketsCount(getStoredBookings().length);
+    window.addEventListener('storage', updateCount);
+    window.addEventListener('jan_yatra_offline_queue_updated', updateCount);
+    return () => {
+      window.removeEventListener('storage', updateCount);
+      window.removeEventListener('jan_yatra_offline_queue_updated', updateCount);
+    };
+  }, []);
 
   // Update offline queue count on load and changes
   useEffect(() => {
@@ -31,18 +59,38 @@ export default function App() {
     setOfflineQueueCount(queue.length);
   }, [isOffline]);
 
-  // Handle offline/online network simulation toggle & auto-sync
+  // Handle offline/online network status and queued ticket online payment prompt
   useEffect(() => {
     if (!isOffline) {
-      const syncResult = syncOfflineQueue();
-      if (syncResult.count > 0) {
-        showToast(`Auto-synced ${syncResult.count} offline booking(s) to central cloud database!`);
-        setOfflineQueueCount(0);
+      const queue = getOfflineQueue();
+      if (queue.length > 0) {
+        setReconnectionModalTicket(queue[0]);
+        showToast(`Network restored! Prompting online payment for ${queue.length} offline-queued ticket(s).`);
       }
     } else {
       showToast('Simulating Offline Mode (No Internet). Showing cached routes & offline queueing.');
     }
   }, [isOffline]);
+
+  // Real browser online/offline event handlers
+  useEffect(() => {
+    const handleBrowserOnline = () => {
+      setIsOffline(false);
+      const queue = getOfflineQueue();
+      if (queue.length > 0) {
+        setReconnectionModalTicket(queue[0]);
+      }
+    };
+    const handleBrowserOffline = () => {
+      setIsOffline(true);
+    };
+    window.addEventListener('online', handleBrowserOnline);
+    window.addEventListener('offline', handleBrowserOffline);
+    return () => {
+      window.removeEventListener('online', handleBrowserOnline);
+      window.removeEventListener('offline', handleBrowserOffline);
+    };
+  }, []);
 
   // Live GPS simulation loop: move buses continuously along Delhi NCR & Haryana routes
   useEffect(() => {
@@ -91,11 +139,12 @@ export default function App() {
 
   const handleConfirmBooking = (bookingPayload) => {
     const newTicket = saveBookingLocally(bookingPayload, isOffline);
+    setTicketsCount(getStoredBookings().length);
     if (isOffline) {
       setOfflineQueueCount((prev) => prev + 1);
-      showToast('Offline Mode: Ticket saved locally. Will sync when reconnected.');
+      showToast('Offline Mode: Ticket queued locally. Awaiting network for online payment.');
     } else {
-      showToast(`Ticket Confirmed! Pass ID: ${newTicket.ticketHash}`);
+      showToast(`Ticket Confirmed for ${bookingPayload?.passengerName || 'Passenger'}! Pass ID: ${newTicket.ticketHash}`);
     }
     return newTicket;
   };
@@ -108,20 +157,51 @@ export default function App() {
   };
 
   const handleReportDelay = (busId, delayMins, note) => {
+    let updatedBusObj = null;
+
     setBuses((prev) =>
-      prev.map((b) =>
-        b.id === busId
-          ? {
-              ...b,
-              status: 'DELAYED',
-              gpsEtaMinutes: b.gpsEtaMinutes + delayMins,
-              mlEtaMinutes: b.mlEtaMinutes + delayMins,
-              historicalDelayFactor: note,
-            }
-          : b
-      )
+      prev.map((b) => {
+        if (b.id === busId) {
+          const updated = {
+            ...b,
+            status: 'DELAYED',
+            gpsEtaMinutes: Math.max(1, (Number(b.gpsEtaMinutes) || 0) + delayMins),
+            mlEtaMinutes: Math.max(1, (Number(b.mlEtaMinutes) || 0) + delayMins),
+            historicalDelayFactor: note,
+          };
+          updatedBusObj = updated;
+          return updated;
+        }
+        return b;
+      })
     );
-    showToast(`Driver delay reported: +${delayMins} mins on ${busId}`);
+
+    setConductorUser((prev) => {
+      if (prev?.assignedBus && prev.assignedBus.id === busId) {
+        return {
+          ...prev,
+          assignedBus: {
+            ...prev.assignedBus,
+            status: 'DELAYED',
+            gpsEtaMinutes: Math.max(1, (Number(prev.assignedBus.gpsEtaMinutes) || 0) + delayMins),
+            mlEtaMinutes: Math.max(1, (Number(prev.assignedBus.mlEtaMinutes) || 0) + delayMins),
+            historicalDelayFactor: note,
+          },
+        };
+      }
+      return prev;
+    });
+
+    // Broadcast system event so all route tickers & commuter listeners update in real time
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:delay-reported', {
+          detail: { busId, delayMins, note, bus: updatedBusObj },
+        })
+      );
+    }
+
+    showToast(`Voice delay synced: +${delayMins} mins applied live to dispatch!`);
   };
 
   const handleAutoBookFromVoice = (voiceBookingData) => {
@@ -155,11 +235,81 @@ export default function App() {
     showToast('Emergency Backup Bus HR-46-EM-9900 dispatched to Samalkha corridor!');
   };
 
+  const isConductor = currentUser?.role === 'CONDUCTOR' || isConductorLoggedIn;
+
+  // Strict role-based access control and routing enforcement
+  useEffect(() => {
+    if (isConductor) {
+      if (activeView !== 'driver' && activeView !== 'manifest') {
+        setActiveView('driver');
+      }
+    } else {
+      if (activeView === 'driver' || activeView === 'manifest') {
+        setActiveView('commuter');
+      }
+    }
+  }, [isConductor, activeView]);
+
+  const handleLoginCommuter = (commuterData) => {
+    setCurrentUser(commuterData);
+    setIsConductorLoggedIn(false);
+    setConductorUser(null);
+    setActiveView('commuter');
+    setShowRoleModal(false);
+    showToast(`Welcome, ${commuterData.name || 'Commuter'}! Commuter Portal loaded.`);
+  };
+
+  const handleLoginConductor = (conductorData) => {
+    setConductorUser(conductorData);
+    setIsConductorLoggedIn(true);
+    setCurrentUser(conductorData);
+    setActiveView('driver');
+    setShowRoleModal(false);
+    showToast(`Conductor ${conductorData.employeeId} authenticated! ETM Console loaded.`);
+  };
+
+  const handleConductorSignOut = () => {
+    setIsConductorLoggedIn(false);
+    setConductorUser(null);
+    setCurrentUser({
+      name: 'Passenger',
+      contact: '',
+      role: 'COMMUTER',
+    });
+    setActiveView('commuter');
+    showToast('Conductor signed out. Switched to Commuter Portal.');
+  };
+
+  const activeDriverBus = conductorUser?.assignedBus || buses[0];
+  const [commuterSelectedBus, setCommuterSelectedBus] = useState(null);
+
+  useEffect(() => {
+    const handleBusSelected = (e) => {
+      if (e.detail) {
+        setCommuterSelectedBus(e.detail);
+        if (isConductor) {
+          setConductorUser((prev) => (prev ? { ...prev, assignedBus: e.detail } : prev));
+        }
+      }
+    };
+    window.addEventListener('janyatra:bus-selected', handleBusSelected);
+    return () => window.removeEventListener('janyatra:bus-selected', handleBusSelected);
+  }, [isConductor]);
+
+  const activeTickerBus = isConductor ? activeDriverBus : (commuterSelectedBus || buses[0]);
+
   return (
     <div className="min-h-screen bg-[#f9f9fc] bg-animated-road flex flex-col font-sans selection:bg-saffron-300">
       
       {/* High-Impact Opening Cool Intro Splash Animation */}
-      {showSplash && <CoolIntroSplash onFinish={() => setShowSplash(false)} />}
+      {showSplash && (
+        <CoolIntroSplash
+          onFinish={() => {
+            setShowSplash(false);
+            setShowRoleModal(true);
+          }}
+        />
+      )}
 
       {/* Top Header */}
       <Header
@@ -169,10 +319,14 @@ export default function App() {
         setIsOffline={setIsOffline}
         offlineQueueCount={offlineQueueCount}
         onOpenPitch={() => setIsPitchOpen(true)}
+        isConductorLoggedIn={isConductorLoggedIn}
+        ticketsCount={ticketsCount}
+        onOpenRoleModal={() => setShowRoleModal(true)}
+        currentUser={currentUser}
       />
 
-      {/* Animated Moving Bus Road Banner on Every Page */}
-      <MovingBusAnimation />
+      {/* Animated Moving Bus Road Banner on Every Page - Dynamically synced with active route / driver bus */}
+      <MovingBusAnimation bus={activeTickerBus} />
 
       {/* Global Toast Notification */}
       {toastMessage && (
@@ -182,76 +336,155 @@ export default function App() {
         </div>
       )}
 
-      {/* Main View Router */}
+      {/* Main View Router - Strictly Role-Gated */}
       <main className="flex-1">
-        {activeView === 'commuter' && (
-          <CommuterView
-            buses={buses}
-            routes={routes}
-            onOpenTicketModal={(bus, autoData) => {
-              setAutoBookingData(autoData || null);
-              let targetBus = bus;
-              if (!targetBus && autoData?.from && autoData?.to) {
-                const direct = buses.filter((b) => 
-                  b.from?.toLowerCase().includes(autoData.from.toLowerCase().split(' ')[0]) &&
-                  b.to?.toLowerCase().includes(autoData.to.toLowerCase().split(' ')[0])
-                );
-                targetBus = direct[0] || buses[0];
-              }
-              if (targetBus) {
-                setTicketModalBus({
-                  ...targetBus,
-                  from: autoData?.from || targetBus.from,
-                  to: autoData?.to || targetBus.to,
-                  departureTime: autoData?.departureTime || targetBus.departureTime,
-                  arrivalTime: autoData?.arrivalTime || targetBus.arrivalTime,
-                  duration: autoData?.duration || targetBus.duration,
-                  fare: autoData?.fare || targetBus.fare,
-                });
-              } else {
-                setTicketModalBus(buses[0]);
-              }
-            }}
-            isOffline={isOffline}
-          />
-        )}
+        {/* If logged in as Conductor: ONLY render dedicated Conductor Console */}
+        {isConductor ? (
+          <div className="space-y-3">
+            {/* Conductor Active Session Bar */}
+            <div className="bg-gradient-to-r from-navy-950 via-navy-900 to-saffron-900 text-white px-4 sm:px-6 py-2.5 border-b border-navy-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center space-x-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="font-extrabold text-saffron-400 uppercase tracking-wider text-[11px]">
+                  Conductor ETM Session Active
+                </span>
+                <span className="text-navy-300 font-mono text-[11px]">
+                  ID: <strong className="text-white">{conductorUser?.employeeId || 'HR-COND-4089'}</strong>
+                </span>
+                <span className="hidden sm:inline text-navy-300 text-[11px]">
+                  • Bus: <strong className="text-white">{activeDriverBus?.regNumber}</strong>
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleConductorSignOut}
+                  className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-xs font-bold transition-colors flex items-center space-x-1"
+                >
+                  <span>🔒 Sign Out / Switch Role</span>
+                </button>
+              </div>
+            </div>
 
-        {activeView === 'driver' && (
-          <DriverView
-            bus={buses[0]}
-            onUpdateOccupancy={handleUpdateOccupancy}
-            onReportDelay={handleReportDelay}
-          />
-        )}
+            {activeView === 'manifest' ? (
+              <LiveManifestView bus={activeDriverBus} />
+            ) : (
+              <DriverView
+                bus={activeDriverBus}
+                onUpdateOccupancy={handleUpdateOccupancy}
+                onReportDelay={handleReportDelay}
+              />
+            )}
+          </div>
+        ) : (
+          /* If logged in as Commuter (Passenger): Strictly Passenger Features */
+          <>
+            {/* Commuter Map & Live Tracker */}
+            {activeView === 'commuter' && (
+              <CommuterView
+                buses={buses}
+                routes={routes}
+                currentUser={currentUser}
+                onOpenTicketModal={(bus, autoData) => {
+                  setAutoBookingData(autoData || null);
+                  let targetBus = bus;
+                  if (!targetBus && autoData?.from && autoData?.to) {
+                    const direct = buses.filter((b) => 
+                      b.from?.toLowerCase().includes(autoData.from.toLowerCase().split(' ')[0]) &&
+                      b.to?.toLowerCase().includes(autoData.to.toLowerCase().split(' ')[0])
+                    );
+                    targetBus = direct[0] || buses[0];
+                  }
+                  if (targetBus) {
+                    setTicketModalBus({
+                      ...targetBus,
+                      from: autoData?.from || targetBus.from,
+                      to: autoData?.to || targetBus.to,
+                      departureTime: autoData?.departureTime || targetBus.departureTime,
+                      arrivalTime: autoData?.arrivalTime || targetBus.arrivalTime,
+                      duration: autoData?.duration || targetBus.duration,
+                      fare: autoData?.fare || targetBus.fare,
+                      travelDate: autoData?.travelDate || targetBus.travelDate,
+                    });
+                  } else {
+                    setTicketModalBus(buses[0]);
+                  }
+                }}
+                isOffline={isOffline}
+              />
+            )}
 
-        {activeView === 'admin' && (
-          <AdminView
-            buses={buses}
-            routes={routes}
-            onDispatchBackup={handleDispatchBackupBus}
-          />
-        )}
+            {/* My Confirmed Tickets & Passes */}
+            {activeView === 'tickets' && (
+              <MyTicketsView
+                onNavigateToBook={() => setActiveView('commuter')}
+                buses={buses}
+                currentUser={currentUser}
+                onCompletePayment={(ticket) => setReconnectionModalTicket(ticket)}
+              />
+            )}
 
-        {activeView === 'sms' && <SmsSimulator />}
+            {/* Admin Fleet Dashboard */}
+            {activeView === 'admin' && (
+              <AdminView
+                buses={buses}
+                routes={routes}
+                onDispatchBackup={handleDispatchBackupBus}
+              />
+            )}
+
+            {/* USSD / SMS Fallback Assistant */}
+            {activeView === 'sms' && <SmsSimulator />}
+          </>
+        )}
       </main>
 
-      {/* Floating Voice Assistant Widget */}
-      <VoiceAssistant onAutoBookTicket={handleAutoBookFromVoice} />
+      {/* Floating Voice Assistant Widget - Passenger Only */}
+      {!isConductor && <VoiceAssistant onAutoBookTicket={handleAutoBookFromVoice} />}
 
-      {/* Ticket Booking Drawer Modal */}
-      <TicketModal
-        bus={ticketModalBus}
-        isOpen={Boolean(ticketModalBus)}
-        onClose={() => setTicketModalBus(null)}
-        onConfirmBooking={handleConfirmBooking}
-        isOffline={isOffline}
-        initialBookingData={autoBookingData}
-      />
+      {/* Ticket Booking Drawer Modal - Passenger Only */}
+      {!isConductor && (
+        <TicketModal
+          bus={ticketModalBus}
+          isOpen={Boolean(ticketModalBus)}
+          onClose={() => setTicketModalBus(null)}
+          onConfirmBooking={handleConfirmBooking}
+          isOffline={isOffline}
+          initialBookingData={autoBookingData}
+          currentUser={currentUser}
+        />
+      )}
 
       {/* Hackathon System Features Presentation Drawer */}
       <PitchModal
         isOpen={isPitchOpen}
         onClose={() => setIsPitchOpen(false)}
+      />
+
+      {/* Reconnection Prompt Modal for Queued Offline Tickets */}
+      <OfflineReconnectionModal
+        isOpen={Boolean(reconnectionModalTicket)}
+        ticket={reconnectionModalTicket}
+        onPaymentSuccess={(confirmedTicket) => {
+          setTicketsCount(getStoredBookings().length);
+          const remaining = getOfflineQueue();
+          setOfflineQueueCount(remaining.length);
+          showToast(`Payment received! Ticket #${confirmedTicket.ticketHash || confirmedTicket.id} confirmed.`);
+          if (remaining.length > 0) {
+            setReconnectionModalTicket(remaining[0]);
+          } else {
+            setReconnectionModalTicket(null);
+          }
+        }}
+        onClose={() => setReconnectionModalTicket(null)}
+      />
+
+      {/* Role Selection & Sign-In Modal Overlay on Initial Load / Switch */}
+      <RoleAuthModal
+        isOpen={showRoleModal}
+        onClose={() => setShowRoleModal(false)}
+        onLoginCommuter={handleLoginCommuter}
+        onLoginConductor={handleLoginConductor}
+        buses={buses}
       />
     </div>
   );

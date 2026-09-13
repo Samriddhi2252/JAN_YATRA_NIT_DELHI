@@ -1,5 +1,5 @@
 // Web Speech API Service for JAN YATRA Bilingual Voice Assistant (Hindi & Indian English)
-import { findBusesForRoute } from './mockData';
+import { findBusesForRoute } from './mockData.js';
 
 export const isSpeechSupported = () => {
   return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
@@ -40,45 +40,226 @@ export const speakText = (text, lang = 'hi-IN') => {
   }
 };
 
-export const createSpeechRecognizer = (onResult, onError, onEnd, lang = 'hi-IN') => {
+/**
+ * Creates a SpeechRecognition instance with:
+ * 1. Automatic timeout if no voice input is detected within window (default 6s) -> onNoSpeech / onError('no-speech')
+ * 2. Speech-end detection via debounced silence timer (default 1.8s) -> auto stops mic and finalizes recognition
+ * 3. Fresh per-session transcript reconstruction to prevent endless static repetition loops
+ */
+export const createSpeechRecognizer = (
+  onResultOrOptions,
+  onErrorParam,
+  onEndParam,
+  langParam = 'hi-IN',
+  extraOptions = {}
+) => {
   if (!isSpeechSupported()) return null;
+
+  let onResult, onError, onEnd, onSpeechEnd, onNoSpeech, lang, silenceTimeoutMs, noSpeechTimeoutMs;
+
+  if (typeof onResultOrOptions === 'object' && onResultOrOptions !== null) {
+    ({
+      onResult,
+      onError,
+      onEnd,
+      onSpeechEnd,
+      onNoSpeech,
+      lang = 'hi-IN',
+      silenceTimeoutMs = 1800,
+      noSpeechTimeoutMs = 6000
+    } = onResultOrOptions);
+  } else {
+    onResult = onResultOrOptions;
+    onError = onErrorParam;
+    onEnd = onEndParam;
+    lang = langParam || 'hi-IN';
+    silenceTimeoutMs = extraOptions.silenceTimeoutMs || 1800;
+    noSpeechTimeoutMs = extraOptions.noSpeechTimeoutMs || 6000;
+    onSpeechEnd = extraOptions.onSpeechEnd;
+    onNoSpeech = extraOptions.onNoSpeech;
+  }
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const recognition = new SpeechRecognition();
-  
-  // Continuous listening to prevent stream abortion during natural pauses
+
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.maxAlternatives = 3;
   recognition.lang = lang;
 
-  let accumulatedFinal = '';
+  let initialNoSpeechTimer = null;
+  let silenceTimer = null;
+  let hasDetectedSpeech = false;
+  let latestFinalTranscript = '';
+  let isStopped = false;
+  let hasFinalized = false;
+
+  const clearTimers = () => {
+    if (initialNoSpeechTimer) {
+      clearTimeout(initialNoSpeechTimer);
+      initialNoSpeechTimer = null;
+    }
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+  };
+
+  const startInitialTimeout = () => {
+    clearTimers();
+    initialNoSpeechTimer = setTimeout(() => {
+      if (!hasDetectedSpeech && !isStopped && !hasFinalized) {
+        hasFinalized = true;
+        isStopped = true;
+        try { recognition.stop(); } catch (e) {}
+        if (onNoSpeech) onNoSpeech();
+        if (onError) onError('no-speech');
+      }
+    }, noSpeechTimeoutMs);
+  };
+
+  const finalizeSession = (finalText) => {
+    if (hasFinalized) return;
+    hasFinalized = true;
+    isStopped = true;
+    clearTimers();
+    try { recognition.stop(); } catch (e) {}
+
+    const textToProcess = (finalText || latestFinalTranscript).trim();
+    if (textToProcess) {
+      if (onSpeechEnd) {
+        onSpeechEnd(textToProcess);
+      } else if (onResult) {
+        onResult(textToProcess, true);
+      }
+    } else {
+      if (onNoSpeech) onNoSpeech();
+      if (onError) onError('no-speech');
+    }
+  };
+
+  recognition.onstart = () => {
+    isStopped = false;
+    hasFinalized = false;
+    hasDetectedSpeech = false;
+    latestFinalTranscript = '';
+    startInitialTimeout();
+  };
 
   recognition.onresult = (event) => {
+    if (hasFinalized) return;
+
+    // Reset initial timer since audio/speech input has been detected
+    if (initialNoSpeechTimer) {
+      clearTimeout(initialNoSpeechTimer);
+      initialNoSpeechTimer = null;
+    }
+
+    // Reconstruct current transcript freshly from event.results
+    // to prevent infinite static text accumulation loops across speech turns
     let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
+    let finals = '';
+    for (let i = 0; i < event.results.length; ++i) {
       const res = event.results[i];
       if (res.isFinal) {
-        accumulatedFinal += res[0].transcript + ' ';
+        finals += res[0].transcript + ' ';
       } else {
         interim += res[0].transcript;
       }
     }
-    const combined = (accumulatedFinal + interim).trim();
-    const isFinalChunk = event.results[event.results.length - 1]?.isFinal || false;
-    onResult(combined, isFinalChunk);
+
+    const currentCombined = (finals + interim).trim();
+
+    if (currentCombined) {
+      hasDetectedSpeech = true;
+      latestFinalTranscript = currentCombined;
+
+      // Pass updated transcript to caller
+      if (onResult) {
+        onResult(currentCombined, false);
+      }
+
+      // Speech-end detection: if user goes silent after speaking, automatically turn off mic
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        finalizeSession(latestFinalTranscript);
+      }, silenceTimeoutMs);
+    }
   };
 
   recognition.onerror = (event) => {
-    if (event.error === 'no-speech' || event.error === 'aborted') {
+    if (hasFinalized) return;
+
+    if (event.error === 'no-speech') {
+      if (!hasDetectedSpeech) {
+        hasFinalized = true;
+        clearTimers();
+        if (onNoSpeech) onNoSpeech();
+        if (onError) onError('no-speech');
+      }
       return;
     }
+
+    if (event.error === 'aborted') {
+      clearTimers();
+      return;
+    }
+
     console.warn('Speech recognition warning:', event.error);
+    clearTimers();
     if (onError) onError(event.error);
   };
 
   recognition.onend = () => {
+    clearTimers();
+    if (!hasFinalized) {
+      if (!hasDetectedSpeech) {
+        hasFinalized = true;
+        if (onNoSpeech) onNoSpeech();
+      } else if (latestFinalTranscript.trim()) {
+        hasFinalized = true;
+        if (onSpeechEnd) {
+          onSpeechEnd(latestFinalTranscript.trim());
+        } else if (onResult) {
+          onResult(latestFinalTranscript.trim(), true);
+        }
+      }
+    }
     if (onEnd) onEnd();
+  };
+
+  // Wrap start, stop, abort to manage timer lifecycles safely
+  const originalStart = recognition.start.bind(recognition);
+  const originalStop = recognition.stop.bind(recognition);
+  const originalAbort = recognition.abort.bind(recognition);
+
+  recognition.start = () => {
+    isStopped = false;
+    hasFinalized = false;
+    hasDetectedSpeech = false;
+    latestFinalTranscript = '';
+    startInitialTimeout();
+    try {
+      originalStart();
+    } catch (e) {
+      console.warn('Speech recognition start error:', e);
+    }
+  };
+
+  recognition.stop = () => {
+    isStopped = true;
+    clearTimers();
+    try {
+      originalStop();
+    } catch (e) {}
+  };
+
+  recognition.abort = () => {
+    isStopped = true;
+    clearTimers();
+    try {
+      originalAbort();
+    } catch (e) {}
   };
 
   return recognition;

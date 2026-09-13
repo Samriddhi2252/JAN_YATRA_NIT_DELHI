@@ -3,77 +3,199 @@ import { Bus, Zap } from 'lucide-react';
 import { INITIAL_BUSES, INITIAL_ROUTES, findBusesForRoute } from '../services/mockData';
 
 export default function MovingBusAnimation({ bus: propBus }) {
-  const [currentBus, setCurrentBus] = useState(propBus || INITIAL_BUSES[0]);
-  const [fromName, setFromName] = useState('Delhi');
-  const [toName, setToName] = useState('Noida');
-  const [corridorStops, setCorridorStops] = useState([
-    'Kashmiri Gate',
-    'Akshardham',
-    'Sector 18',
-    'Sector 62'
-  ]);
+  const resolveRouteData = (b) => {
+    if (!b) {
+      return {
+        from: 'Delhi',
+        to: 'Noida',
+        stops: ['Kashmiri Gate', 'Akshardham', 'Sector 18', 'Sector 62']
+      };
+    }
+    let fromCity = b.from;
+    let toCity = b.to;
+    if (!fromCity || !toCity) {
+      const matchedRoute = INITIAL_ROUTES.find((r) => r.id === b.routeId);
+      if (matchedRoute) {
+        fromCity = fromCity || matchedRoute.from;
+        toCity = toCity || matchedRoute.to;
+      } else if (b.routeName && b.routeName.includes('-')) {
+        const parts = b.routeName.split('-');
+        fromCity = fromCity || parts[0].trim();
+        toCity = toCity || parts[1].replace(/Express|Corridor|Flyer|Feeder|Connect|Rapid|Cityliner/i, '').trim();
+      }
+    }
+    const fromShort = fromCity ? fromCity.split('(')[0].trim() : 'Origin';
+    const toShort = toCity ? toCity.split('(')[0].trim() : 'Destination';
 
-  const updateCorridorData = (fromCity, toCity) => {
+    const matchedRouteById = INITIAL_ROUTES.find((r) => r.id === b.routeId);
+    let stops = null;
+    if (matchedRouteById && matchedRouteById.stops && matchedRouteById.stops.length >= 2) {
+      stops = matchedRouteById.stops;
+    } else {
+      const matchedRouteByNames = INITIAL_ROUTES.find(
+        (r) =>
+          (r.from?.toLowerCase().includes(fromShort.toLowerCase()) && r.to?.toLowerCase().includes(toShort.toLowerCase())) ||
+          (r.name?.toLowerCase().includes(fromShort.toLowerCase()) && r.name?.toLowerCase().includes(toShort.toLowerCase()))
+      );
+      if (matchedRouteByNames && matchedRouteByNames.stops && matchedRouteByNames.stops.length >= 2) {
+        stops = matchedRouteByNames.stops;
+      } else {
+        const reverseRoute = INITIAL_ROUTES.find(
+          (r) =>
+            r.from?.toLowerCase().includes(toShort.toLowerCase()) && r.to?.toLowerCase().includes(fromShort.toLowerCase())
+        );
+        if (reverseRoute && reverseRoute.stops && reverseRoute.stops.length >= 2) {
+          stops = [...reverseRoute.stops].reverse();
+        }
+      }
+    }
+
+    if (stops && stops.length >= 2) {
+      return { from: fromShort, to: toShort, stops: stops.slice(0, 4) };
+    }
+    const fromLoc = fromCity?.match(/\((.*?)\)/)?.[1] || fromShort;
+    const toLoc = toCity?.match(/\((.*?)\)/)?.[1] || toShort;
+    const intermediate1 = b.nextStop && b.nextStop !== toLoc ? b.nextStop : `${fromShort} Expressway`;
+    const intermediate2 = 'NCR Corridor Link';
+    return {
+      from: fromShort,
+      to: toShort,
+      stops: [fromLoc, intermediate1, intermediate2, toLoc]
+    };
+  };
+
+  const initialRouteInfo = resolveRouteData(propBus);
+  const [currentBus, setCurrentBus] = useState(propBus || INITIAL_BUSES[0]);
+  const [fromName, setFromName] = useState(initialRouteInfo.from);
+  const [toName, setToName] = useState(initialRouteInfo.to);
+  const [corridorStops, setCorridorStops] = useState(initialRouteInfo.stops);
+
+  const updateCorridorData = (fromCity, toCity, specificBus = null) => {
     if (!fromCity || !toCity) return;
     const fromShort = fromCity.split('(')[0].trim();
     const toShort = toCity.split('(')[0].trim();
     setFromName(fromShort);
     setToName(toShort);
 
-    const matchingBuses = findBusesForRoute(INITIAL_BUSES, fromCity, toCity);
-    const bus = matchingBuses && matchingBuses.length > 0 ? matchingBuses[0] : INITIAL_BUSES[0];
+    // 1. Resolve matching bus for the corridor
+    let bus = specificBus || propBus;
+    if (!bus) {
+      const matchingBuses = findBusesForRoute(INITIAL_BUSES, fromCity, toCity);
+      bus = matchingBuses && matchingBuses.length > 0 ? matchingBuses[0] : null;
+    }
+    if (!bus) {
+      bus = INITIAL_BUSES.find(
+        (b) =>
+          (b.from && b.from.toLowerCase().includes(fromShort.toLowerCase())) ||
+          (b.to && b.to.toLowerCase().includes(toShort.toLowerCase())) ||
+          (b.routeName && b.routeName.toLowerCase().includes(fromShort.toLowerCase())) ||
+          (b.routeName && b.routeName.toLowerCase().includes(toShort.toLowerCase()))
+      );
+    }
+    if (!bus) {
+      bus = {
+        ...INITIAL_BUSES[0],
+        routeName: `${fromShort} - ${toShort} Express`,
+        from: fromCity,
+        to: toCity,
+        nextStop: `${toShort} Terminal`,
+      };
+    }
     setCurrentBus(bus);
 
-    const matchedRoute = INITIAL_ROUTES.find((r) => r.id === bus.routeId);
-    if (matchedRoute && matchedRoute.stops && matchedRoute.stops.length > 0) {
-      setCorridorStops(matchedRoute.stops.slice(0, 4));
+    // 2. Resolve realistic landmark stop sequence along the corridor
+    let stops = null;
+    const matchedRouteById = INITIAL_ROUTES.find((r) => r.id === bus.routeId);
+    if (matchedRouteById && matchedRouteById.stops && matchedRouteById.stops.length >= 2) {
+      stops = matchedRouteById.stops;
     } else {
-      setCorridorStops([
-        fromShort,
-        bus.nextStop || 'Expressway Midpoint',
-        toShort
-      ]);
+      const matchedRouteByNames = INITIAL_ROUTES.find(
+        (r) =>
+          (r.from?.toLowerCase().includes(fromShort.toLowerCase()) && r.to?.toLowerCase().includes(toShort.toLowerCase())) ||
+          (r.name?.toLowerCase().includes(fromShort.toLowerCase()) && r.name?.toLowerCase().includes(toShort.toLowerCase()))
+      );
+      if (matchedRouteByNames && matchedRouteByNames.stops && matchedRouteByNames.stops.length >= 2) {
+        stops = matchedRouteByNames.stops;
+      } else {
+        const reverseRoute = INITIAL_ROUTES.find(
+          (r) =>
+            r.from?.toLowerCase().includes(toShort.toLowerCase()) && r.to?.toLowerCase().includes(fromShort.toLowerCase())
+        );
+        if (reverseRoute && reverseRoute.stops && reverseRoute.stops.length >= 2) {
+          stops = [...reverseRoute.stops].reverse();
+        }
+      }
+    }
+
+    if (stops && stops.length >= 2) {
+      setCorridorStops(stops.slice(0, 4));
+    } else {
+      const fromLoc = fromCity.match(/\((.*?)\)/)?.[1] || fromShort;
+      const toLoc = toCity.match(/\((.*?)\)/)?.[1] || toShort;
+      const intermediate1 = bus.nextStop && bus.nextStop !== toLoc ? bus.nextStop : `${fromShort} Expressway`;
+      const intermediate2 = 'NCR Corridor Link';
+      setCorridorStops([fromLoc, intermediate1, intermediate2, toLoc]);
     }
   };
 
+  // Sync with propBus when passed or updated from parent
   useEffect(() => {
     if (propBus) {
       setCurrentBus(propBus);
-      return;
+      const data = resolveRouteData(propBus);
+      setFromName(data.from);
+      setToName(data.to);
+      setCorridorStops(data.stops);
     }
+  }, [propBus?.id, propBus?.regNumber, propBus?.routeName, propBus?.from, propBus?.to]);
 
+  useEffect(() => {
     const syncWithDom = () => {
+      const fromEl = document.getElementById('from-city-select');
+      const toEl = document.getElementById('to-city-select');
+      if (fromEl && toEl && fromEl.value && toEl.value) {
+        updateCorridorData(fromEl.value, toEl.value);
+        return;
+      }
       const selects = document.querySelectorAll('select');
-      if (selects.length >= 2) {
-        const f = selects[0].value;
-        const t = selects[1].value;
-        if (f && t) {
+      for (let i = 0; i < selects.length - 1; i++) {
+        const f = selects[i].value;
+        const t = selects[i + 1].value;
+        if (f && t && (f.includes('(') || t.includes('('))) {
           updateCorridorData(f, t);
+          return;
         }
       }
     };
 
-    // Initial check
-    syncWithDom();
+    // Initial check if no propBus is provided
+    if (!propBus) {
+      syncWithDom();
+    }
 
     // Listen to changes in origin/destination dropdowns
     document.addEventListener('change', syncWithDom);
 
     // Listen to clicks on popular corridor chips, swap button, or bus cards
     const handleClick = () => {
-      setTimeout(syncWithDom, 60);
-      setTimeout(syncWithDom, 250);
+      setTimeout(syncWithDom, 50);
+      setTimeout(syncWithDom, 200);
     };
     document.addEventListener('click', handleClick);
 
     const handleCustomRoute = (e) => {
       if (e.detail?.from && e.detail?.to) {
-        updateCorridorData(e.detail.from, e.detail.to);
+        updateCorridorData(e.detail.from, e.detail.to, e.detail.bus);
       }
     };
     const handleCustomBus = (e) => {
       if (e.detail) {
-        setCurrentBus(e.detail);
+        const bus = e.detail;
+        setCurrentBus(bus);
+        const data = resolveRouteData(bus);
+        setFromName(data.from);
+        setToName(data.to);
+        setCorridorStops(data.stops);
       }
     };
     window.addEventListener('janyatra:route-changed', handleCustomRoute);

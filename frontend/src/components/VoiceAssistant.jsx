@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Mic, MicOff, Volume2, X, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Mic, MicOff, Volume2, X, Sparkles, AlertCircle, RotateCcw } from 'lucide-react';
 import { createSpeechRecognizer, speakText, parseVoiceIntent, getVoiceRecommendations } from '../services/speech';
 import { SAMPLE_VOICE_COMMANDS, INITIAL_BUSES } from '../services/mockData';
 
@@ -7,6 +7,7 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [tryAgainNotice, setTryAgainNotice] = useState(null);
   const [selectedLang, setSelectedLang] = useState('hi-IN');
   const [chatHistory, setChatHistory] = useState([
     {
@@ -17,49 +18,142 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
     }
   ]);
 
-  const [recognizer, setRecognizer] = useState(null);
+  const recognizerRef = useRef(null);
+  const sessionHandledRef = useRef(false);
 
+  // Start / Stop speech recognition when isListening or selectedLang changes
   useEffect(() => {
     if (isListening) {
-      const rec = createSpeechRecognizer(
-        (text, isFinal) => {
+      sessionHandledRef.current = false;
+
+      const rec = createSpeechRecognizer({
+        lang: selectedLang,
+        silenceTimeoutMs: 1800,
+        noSpeechTimeoutMs: 6000,
+        onResult: (text, isFinal) => {
+          // Dynamically clear or update transcript based on newly recognized speech input
           setTranscript(text);
-          if (isFinal && text.trim()) {
-            handleUserVoiceInput(text);
+          if (isFinal && text.trim() && !sessionHandledRef.current) {
+            sessionHandledRef.current = true;
             setIsListening(false);
+            handleUserVoiceInput(text.trim());
           }
         },
-        (err) => {
-          console.error('Voice error:', err);
+        onSpeechEnd: (finalText) => {
+          // Speech-end detection: turns off mic when speaker stops speaking / goes silent
           setIsListening(false);
+          if (finalText && finalText.trim() && !sessionHandledRef.current) {
+            sessionHandledRef.current = true;
+            setTranscript(finalText.trim());
+            handleUserVoiceInput(finalText.trim());
+          }
         },
-        () => setIsListening(false),
-        selectedLang
-      );
+        onNoSpeech: () => {
+          // Automatic timeout if no clear voice input is detected within window
+          setIsListening(false);
+          handleNoSpeechDetected();
+        },
+        onError: (err) => {
+          setIsListening(false);
+          if (err === 'no-speech') {
+            handleNoSpeechDetected();
+          } else {
+            console.warn('Voice recognition error:', err);
+          }
+        },
+        onEnd: () => {
+          setIsListening(false);
+        }
+      });
 
       if (rec) {
+        recognizerRef.current = rec;
         try {
           rec.start();
-          setRecognizer(rec);
         } catch (e) {
-          console.error(e);
+          console.warn('Could not start speech recognition:', e);
+          setIsListening(false);
         }
       } else {
         setIsListening(false);
       }
     } else {
-      if (recognizer) {
+      if (recognizerRef.current) {
         try {
-          recognizer.stop();
+          recognizerRef.current.stop();
         } catch (e) {}
+        recognizerRef.current = null;
       }
     }
+
+    return () => {
+      if (recognizerRef.current) {
+        try {
+          recognizerRef.current.stop();
+        } catch (e) {}
+        recognizerRef.current = null;
+      }
+    };
   }, [isListening, selectedLang]);
 
-  const handleUserVoiceInput = (inputText) => {
-    if (!inputText.trim()) return;
+  const handleNoSpeechDetected = () => {
+    if (sessionHandledRef.current) return;
+    sessionHandledRef.current = true;
 
-    const userMsg = { sender: 'user', text: inputText, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+    // Display 'Try again' message
+    const tryAgainLabel = 'Try again';
+    setTranscript(tryAgainLabel);
+
+    const messageText = selectedLang === 'hi-IN'
+      ? 'कोई आवाज़ नहीं सुनाई दी। कृपया पुनः प्रयास करें (Try again)।'
+      : 'No speech detected. Please try again.';
+    setTryAgainNotice(messageText);
+
+    const assistantMsg = {
+      sender: 'assistant',
+      text: messageText,
+      isTryAgain: true,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setChatHistory((prev) => [...prev, assistantMsg]);
+    speakText(selectedLang === 'hi-IN' ? 'कृपया दोबारा बोलें' : 'Please try again', selectedLang);
+  };
+
+  const handleToggleListening = () => {
+    if (isListening) {
+      setIsListening(false);
+    } else {
+      // Clear previous transcript dynamically so it never loops static text
+      setTranscript('');
+      setTryAgainNotice(null);
+      sessionHandledRef.current = false;
+      setIsListening(true);
+    }
+  };
+
+  const handleCloseModal = () => {
+    if (recognizerRef.current) {
+      try {
+        recognizerRef.current.stop();
+      } catch (e) {}
+      recognizerRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsListening(false);
+    setIsOpen(false);
+  };
+
+  const handleUserVoiceInput = (inputText) => {
+    if (!inputText.trim() || inputText.trim().toLowerCase() === 'try again') return;
+    setTryAgainNotice(null);
+
+    const userMsg = {
+      sender: 'user',
+      text: inputText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
     setChatHistory((prev) => [...prev, userMsg]);
 
     const intent = parseVoiceIntent(inputText);
@@ -101,6 +195,14 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
   };
 
   const triggerSampleCommand = (cmdText, lang) => {
+    if (recognizerRef.current) {
+      try {
+        recognizerRef.current.stop();
+      } catch (e) {}
+      recognizerRef.current = null;
+    }
+    setIsListening(false);
+    setTryAgainNotice(null);
     setSelectedLang(lang);
     setTranscript(cmdText);
     handleUserVoiceInput(cmdText);
@@ -112,7 +214,11 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
       <div className="fixed bottom-6 right-6 z-50">
         {!isOpen && (
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={() => {
+              setTranscript('');
+              setTryAgainNotice(null);
+              setIsOpen(true);
+            }}
             className="group relative flex items-center space-x-3 bg-gradient-to-r from-saffron-500 via-saffron-600 to-navy-800 text-white px-5 py-3.5 rounded-full shadow-saffron border-2 border-white transition-all transform hover:scale-105 active:scale-95 voice-pulse"
           >
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
@@ -147,7 +253,7 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
               </div>
 
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={handleCloseModal}
                 className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all"
               >
                 <X className="w-5 h-5" />
@@ -159,7 +265,11 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
               <span className="font-extrabold text-navy-800">Voice Language:</span>
               <div className="flex space-x-2">
                 <button
-                  onClick={() => setSelectedLang('hi-IN')}
+                  onClick={() => {
+                    setSelectedLang('hi-IN');
+                    setTranscript('');
+                    setTryAgainNotice(null);
+                  }}
                   className={`px-3 py-1 rounded-lg text-xs font-black transition-all ${
                     selectedLang === 'hi-IN' ? 'bg-saffron-500 text-white shadow-sm' : 'bg-white text-navy-800 border border-navy-200'
                   }`}
@@ -167,7 +277,11 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
                   हिन्दी (Hindi)
                 </button>
                 <button
-                  onClick={() => setSelectedLang('en-IN')}
+                  onClick={() => {
+                    setSelectedLang('en-IN');
+                    setTranscript('');
+                    setTryAgainNotice(null);
+                  }}
                   className={`px-3 py-1 rounded-lg text-xs font-black transition-all ${
                     selectedLang === 'en-IN' ? 'bg-navy-800 text-white shadow-sm' : 'bg-white text-navy-800 border border-navy-200'
                   }`}
@@ -188,6 +302,8 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
                     className={`max-w-[82%] rounded-2xl px-4 py-3 text-xs leading-relaxed font-bold shadow-sm ${
                       msg.sender === 'user'
                         ? 'bg-navy-800 text-white rounded-br-none'
+                        : msg.isTryAgain
+                        ? 'bg-amber-50 text-amber-950 border border-amber-300 rounded-bl-none'
                         : 'bg-white text-navy-900 border border-navy-100 rounded-bl-none'
                     }`}
                   >
@@ -253,9 +369,34 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
 
               {isListening && (
                 <div className="flex justify-start">
-                  <div className="bg-saffron-50 border border-saffron-200 text-saffron-900 rounded-2xl p-3 text-xs flex items-center space-x-2 animate-pulse font-bold">
-                    <Mic className="w-4 h-4 text-saffron-600 animate-bounce" />
-                    <span>Listening... {transcript || 'Speak now (boliye)'}</span>
+                  <div className="bg-saffron-50 border border-saffron-200 text-saffron-900 rounded-2xl p-3 text-xs flex items-center space-x-2 animate-pulse font-bold shadow-sm">
+                    <Mic className="w-4 h-4 text-saffron-600 animate-bounce flex-shrink-0" />
+                    <span className="truncate">
+                      Listening... {transcript || (selectedLang === 'hi-IN' ? 'बोलिए (Speak now)...' : 'Speak now...')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {tryAgainNotice && !isListening && (
+                <div className="flex justify-start animate-fade-in">
+                  <div className="bg-amber-50 border border-amber-300 text-amber-950 rounded-2xl p-3 text-xs flex items-center justify-between space-x-2 font-bold shadow-sm w-full">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>{tryAgainNotice}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTranscript('');
+                        setTryAgainNotice(null);
+                        sessionHandledRef.current = false;
+                        setIsListening(true);
+                      }}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 shadow-sm transition-all"
+                    >
+                      Try again
+                    </button>
                   </div>
                 </div>
               )}
@@ -282,10 +423,10 @@ export default function VoiceAssistant({ onAutoBookTicket }) {
             {/* Voice Input Action Controls */}
             <div className="p-4 bg-white border-t border-navy-100 flex items-center space-x-3">
               <button
-                onClick={() => setIsListening(!isListening)}
+                onClick={handleToggleListening}
                 className={`flex-1 py-3.5 px-4 rounded-xl font-black text-xs text-white transition-all flex items-center justify-center space-x-2 ${
                   isListening
-                    ? 'bg-saffron-600 hover:bg-saffron-700 animate-pulse'
+                    ? 'bg-red-600 hover:bg-red-700 animate-pulse'
                     : 'bg-gradient-to-r from-saffron-500 to-saffron-600 hover:from-saffron-600 hover:to-saffron-700 shadow-saffron'
                 }`}
               >

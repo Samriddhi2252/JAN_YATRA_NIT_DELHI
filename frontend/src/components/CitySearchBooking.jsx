@@ -19,7 +19,7 @@ import {
   Clock,
   ChevronRight
 } from 'lucide-react';
-import { CITIES_LIST, SAMPLE_VOICE_COMMANDS, INITIAL_BUSES } from '../services/mockData';
+import { CITIES_LIST, SAMPLE_VOICE_COMMANDS, INITIAL_BUSES, findBusesForRoute } from '../services/mockData';
 import {
   createSpeechRecognizer,
   speakText,
@@ -60,6 +60,20 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         onSelectSearchRoute(from, to, count || passengers);
         const recs = getVoiceRecommendations(`${from} se ${to}`, INITIAL_BUSES);
         setRealtimeRecommendations(recs);
+        const matched = findBusesForRoute(INITIAL_BUSES, from, to);
+        const bus = matched && matched.length > 0 ? matched[0] : null;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('janyatra:route-changed', {
+              detail: { from, to, bus }
+            })
+          );
+          if (bus) {
+            window.dispatchEvent(
+              new CustomEvent('janyatra:bus-selected', { detail: bus })
+            );
+          }
+        }
       }
     };
 
@@ -78,10 +92,10 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
 
   const handleDateChange = (e) => {
     const selectedDate = e.target.value;
-    if (selectedDate && selectedDate < todayStr) {
-      setTravelDate(todayStr);
-    } else {
-      setTravelDate(selectedDate);
+    const finalDate = (selectedDate && selectedDate < todayStr) ? todayStr : selectedDate;
+    setTravelDate(finalDate);
+    if (onSelectSearchRoute) {
+      onSelectSearchRoute(fromCity, toCity, passengers, finalDate);
     }
   };
 
@@ -101,10 +115,44 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
 
   const handleFromCityChange = (newFrom) => {
     setFromCity(newFrom);
+    if (onSelectSearchRoute) {
+      onSelectSearchRoute(newFrom, toCity, passengers, travelDate);
+    }
+    const matched = findBusesForRoute(INITIAL_BUSES, newFrom, toCity);
+    const bus = matched && matched.length > 0 ? matched[0] : null;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:route-changed', {
+          detail: { from: newFrom, to: toCity, bus }
+        })
+      );
+      if (bus) {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:bus-selected', { detail: bus })
+        );
+      }
+    }
   };
 
   const handleToCityChange = (newTo) => {
     setToCity(newTo);
+    if (onSelectSearchRoute) {
+      onSelectSearchRoute(fromCity, newTo, passengers, travelDate);
+    }
+    const matched = findBusesForRoute(INITIAL_BUSES, fromCity, newTo);
+    const bus = matched && matched.length > 0 ? matched[0] : null;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:route-changed', {
+          detail: { from: fromCity, to: newTo, bus }
+        })
+      );
+      if (bus) {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:bus-selected', { detail: bus })
+        );
+      }
+    }
   };
 
   const handleSwapCities = () => {
@@ -112,23 +160,57 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     const tempTo = fromCity;
     setFromCity(tempFrom);
     setToCity(tempTo);
+    if (onSelectSearchRoute) {
+      onSelectSearchRoute(tempFrom, tempTo, passengers, travelDate);
+    }
+    const matched = findBusesForRoute(INITIAL_BUSES, tempFrom, tempTo);
+    const bus = matched && matched.length > 0 ? matched[0] : null;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:route-changed', {
+          detail: { from: tempFrom, to: tempTo, bus }
+        })
+      );
+      if (bus) {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:bus-selected', { detail: bus })
+        );
+      }
+    }
   };
 
   const handleSearchBuses = (e) => {
     e.preventDefault();
-    onSelectSearchRoute(fromCity, toCity, passengers);
+    if (onSelectSearchRoute) {
+      onSelectSearchRoute(fromCity, toCity, passengers, travelDate);
+    }
     setSearchResults({
       from: fromCity,
       to: toCity,
       date: travelDate,
       passengers,
     });
+    const matched = findBusesForRoute(INITIAL_BUSES, fromCity, toCity);
+    const bus = matched && matched.length > 0 ? matched[0] : null;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:route-changed', {
+          detail: { from: fromCity, to: toCity, bus }
+        })
+      );
+      if (bus) {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:bus-selected', { detail: bus })
+        );
+      }
+    }
     const recs = getVoiceRecommendations(`${fromCity} to ${toCity}`, INITIAL_BUSES);
     setRealtimeRecommendations(recs);
   };
 
   // Process user voice input and dynamically populate recommendations
   const processVoiceInput = (rawText, lang) => {
+    if (!rawText || rawText.trim().toLowerCase() === 'try again') return;
     const activeLang = lang || voiceLang;
     setVoiceTranscript(rawText);
 
@@ -148,6 +230,21 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
 
       // Trigger route filter
       onSelectSearchRoute(intent.from, intent.to, pax);
+
+      const matched = findBusesForRoute(INITIAL_BUSES, intent.from, intent.to);
+      const bus = matched && matched.length > 0 ? matched[0] : null;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:route-changed', {
+            detail: { from: intent.from, to: intent.to, bus }
+          })
+        );
+        if (bus) {
+          window.dispatchEvent(
+            new CustomEvent('janyatra:bus-selected', { detail: bus })
+          );
+        }
+      }
 
       // Provide speech synthesis audio guidance in selected language
       speakText(intent.responseText, activeLang);
@@ -173,7 +270,7 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     }
   };
 
-  // Toggle or start speech recognition
+  // Toggle or start speech recognition with automatic silence timeout and speech-end detection
   const handleToggleVoice = () => {
     if (isListening) {
       if (recognizer) {
@@ -184,6 +281,7 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     }
 
     setIsVoiceActive(true);
+    // Dynamically clear transcript so old text never loops
     setVoiceTranscript('');
     setVoiceFeedback(null);
 
@@ -192,28 +290,68 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
       return;
     }
 
-    const rec = createSpeechRecognizer(
-      (text, isFinal) => {
+    let sessionHandled = false;
+
+    const rec = createSpeechRecognizer({
+      lang: voiceLang,
+      silenceTimeoutMs: 1800,
+      noSpeechTimeoutMs: 6000,
+      onResult: (text, isFinal) => {
+        // Dynamically update transcript based on newly recognized speech input
         setVoiceTranscript(text);
-        // Continuously update recommendation suggestions as user speaks
         if (text.trim().length > 3) {
           const liveMatches = getVoiceRecommendations(text, INITIAL_BUSES);
           setRealtimeRecommendations(liveMatches);
         }
-        if (isFinal && text.trim()) {
+        if (isFinal && text.trim() && !sessionHandled) {
+          sessionHandled = true;
           setIsListening(false);
-          processVoiceInput(text, voiceLang);
+          processVoiceInput(text.trim(), voiceLang);
         }
       },
-      (err) => {
-        console.warn('Voice recognition error:', err);
+      onSpeechEnd: (finalText) => {
+        // Speech-end detection: turns off mic when speaker stops speaking / goes silent
         setIsListening(false);
+        if (finalText && finalText.trim() && !sessionHandled) {
+          sessionHandled = true;
+          setVoiceTranscript(finalText.trim());
+          processVoiceInput(finalText.trim(), voiceLang);
+        }
       },
-      () => {
+      onNoSpeech: () => {
+        // Automatic timeout if no clear voice input is detected within window -> Try again
         setIsListening(false);
+        if (sessionHandled) return;
+        sessionHandled = true;
+        setVoiceTranscript('Try again');
+        setVoiceFeedback({
+          type: 'NO_SPEECH',
+          responseText: voiceLang === 'hi-IN'
+            ? 'कोई आवाज़ नहीं सुनाई दी। कृपया पुनः प्रयास करें (Try again)।'
+            : 'No voice input detected. Please try again.'
+        });
+        speakText(voiceLang === 'hi-IN' ? 'कृपया दोबारा बोलें' : 'Please try again', voiceLang);
       },
-      voiceLang
-    );
+      onError: (err) => {
+        setIsListening(false);
+        if (err === 'no-speech') {
+          if (sessionHandled) return;
+          sessionHandled = true;
+          setVoiceTranscript('Try again');
+          setVoiceFeedback({
+            type: 'NO_SPEECH',
+            responseText: voiceLang === 'hi-IN'
+              ? 'कोई आवाज़ नहीं सुनाई दी। कृपया पुनः प्रयास करें (Try again)।'
+              : 'No voice input detected. Please try again.'
+          });
+        } else {
+          console.warn('Voice recognition error:', err);
+        }
+      },
+      onEnd: () => {
+        setIsListening(false);
+      }
+    });
 
     if (rec) {
       try {
@@ -232,6 +370,17 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
     setFromCity(recBus.from);
     setToCity(recBus.to);
     onSelectSearchRoute(recBus.from, recBus.to, passengers);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:route-changed', {
+          detail: { from: recBus.from, to: recBus.to, bus: recBus }
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('janyatra:bus-selected', { detail: recBus })
+      );
+    }
 
     // Speak audio confirmation of the selected recommendation
     const msg = voiceLang === 'hi-IN'
@@ -391,9 +540,13 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
             <div className="bg-navy-800/80 rounded-xl p-3 border border-navy-700 space-y-2">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-navy-400 font-bold uppercase text-[9px] tracking-wider">Recognized Transcription:</span>
-                <span className="bg-forest-500/20 text-forest-300 font-bold px-2 py-0.5 rounded text-[10px] flex items-center space-x-1">
+                <span className={`font-bold px-2 py-0.5 rounded text-[10px] flex items-center space-x-1 ${
+                  voiceFeedback?.type === 'NO_SPEECH'
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-forest-500/20 text-forest-300'
+                }`}>
                   <CheckCircle2 className="w-3 h-3" />
-                  <span>Processed</span>
+                  <span>{voiceFeedback?.type === 'NO_SPEECH' ? 'Try Again' : 'Processed'}</span>
                 </span>
               </div>
               <p className="text-xs font-black text-white bg-navy-950/60 p-2.5 rounded-lg border border-navy-700/60 font-mono">
@@ -401,21 +554,33 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
               </p>
 
               {voiceFeedback && (
-                <div className="bg-forest-950/40 border border-forest-500/40 rounded-xl p-2.5 text-xs text-forest-100 flex items-start justify-between gap-2">
+                <div className={`border rounded-xl p-2.5 text-xs flex items-start justify-between gap-2 ${
+                  voiceFeedback.type === 'NO_SPEECH'
+                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-100'
+                    : 'bg-forest-950/40 border-forest-500/40 text-forest-100'
+                }`}>
                   <div className="space-y-1">
-                    <div className="flex items-center space-x-1.5 text-forest-300 font-black">
+                    <div className={`flex items-center space-x-1.5 font-black ${
+                      voiceFeedback.type === 'NO_SPEECH' ? 'text-amber-300' : 'text-forest-300'
+                    }`}>
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>
-                        {voiceFeedback.type === 'BOOK_TICKET' ? 'Booking Requested' : 'Route Identified & Filtered'}
+                        {voiceFeedback.type === 'NO_SPEECH'
+                          ? 'No Speech Detected (Try Again)'
+                          : voiceFeedback.type === 'BOOK_TICKET'
+                          ? 'Booking Requested'
+                          : 'Route Identified & Filtered'}
                       </span>
                     </div>
                     <p className="text-[11px] text-white font-bold">{voiceFeedback.responseText}</p>
-                    <div className="text-[10px] text-navy-300 flex items-center space-x-2 pt-0.5">
-                      <span>From: <strong className="text-saffron-300">{voiceFeedback.from}</strong></span>
-                      <span>➔</span>
-                      <span>To: <strong className="text-forest-300">{voiceFeedback.to}</strong></span>
-                      {voiceFeedback.count && <span>({voiceFeedback.count} seat{voiceFeedback.count > 1 ? 's' : ''})</span>}
-                    </div>
+                    {voiceFeedback.from && voiceFeedback.to && (
+                      <div className="text-[10px] text-navy-300 flex items-center space-x-2 pt-0.5">
+                        <span>From: <strong className="text-saffron-300">{voiceFeedback.from}</strong></span>
+                        <span>➔</span>
+                        <span>To: <strong className="text-forest-300">{voiceFeedback.to}</strong></span>
+                        {voiceFeedback.count && <span>({voiceFeedback.count} seat{voiceFeedback.count > 1 ? 's' : ''})</span>}
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -517,6 +682,7 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
             <span>From (Origin City)</span>
           </label>
           <select
+            id="from-city-select"
             value={fromCity}
             onChange={(e) => handleFromCityChange(e.target.value)}
             className="w-full bg-transparent text-xs font-black text-white focus:outline-none cursor-pointer"
@@ -548,6 +714,7 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
             <span>To (Destination City)</span>
           </label>
           <select
+            id="to-city-select"
             value={toCity}
             onChange={(e) => handleToCityChange(e.target.value)}
             className="w-full bg-transparent text-xs font-black text-white focus:outline-none cursor-pointer"
@@ -616,72 +783,6 @@ export default function CitySearchBooking({ onSelectSearchRoute, onOpenTicketMod
         </div>
 
       </form>
-
-      {/* Quick Inter-City Popular Corridor Chips */}
-      <div className="flex items-center space-x-2 overflow-x-auto pt-1 text-[11px] font-bold">
-        <span className="text-navy-300 uppercase text-[10px] font-black flex-shrink-0">Popular NCR Routes:</span>
-        <button
-          type="button"
-          onClick={() => {
-            setFromCity('Delhi (Kashmiri Gate ISBT)');
-            setToCity('Noida (Sector 62)');
-          }}
-          className="bg-navy-800 hover:bg-navy-700 text-saffron-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
-        >
-          🚌 Delhi ➔ Noida (32 km)
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFromCity('Rohini (Sector 14 & Metro)');
-            setToCity('Greater Noida (Pari Chowk)');
-          }}
-          className="bg-navy-800 hover:bg-navy-700 text-forest-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
-        >
-          🚌 Rohini ➔ Gr. Noida (62 km)
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFromCity('Delhi (Dhaula Kuan)');
-            setToCity('Gurugram (Cyber Hub)');
-          }}
-          className="bg-navy-800 hover:bg-navy-700 text-saffron-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
-        >
-          🚌 Delhi ➔ Gurugram (24 km)
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFromCity('Delhi (Anand Vihar ISBT)');
-            setToCity('Ghaziabad (Old Bus Stand)');
-          }}
-          className="bg-navy-800 hover:bg-navy-700 text-white px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
-        >
-          🚌 Delhi ➔ Ghaziabad (18 km)
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFromCity('Gurugram (IFFCO Chowk)');
-            setToCity('Faridabad (Bata Chowk)');
-          }}
-          className="bg-navy-800 hover:bg-navy-700 text-forest-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
-        >
-          🚌 Gurugram ➔ Faridabad (38 km)
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setFromCity('Rohini (Sector 14 & Metro)');
-            setToCity('Noida (Sector 62)');
-          }}
-          className="bg-navy-800 hover:bg-navy-700 text-saffron-300 px-3 py-1 rounded-xl border border-navy-700 flex-shrink-0 transition-all"
-        >
-          🚌 Rohini ➔ Noida (41 km)
-        </button>
-      </div>
-
     </div>
   );
 }

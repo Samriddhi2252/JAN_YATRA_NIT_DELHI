@@ -4,7 +4,7 @@ import L from 'leaflet';
 import { calculateMlEta } from '../services/mlEta';
 import { findBusesForRoute } from '../services/mockData';
 import CitySearchBooking from './CitySearchBooking';
-import { Bus, MapPin, Zap, Ticket, Sparkles, ChevronRight, AlertTriangle, Info, X } from 'lucide-react';
+import { Bus, MapPin, Zap, Ticket, Sparkles, ChevronRight, AlertTriangle, Info, X, Calendar, Clock } from 'lucide-react';
 
 const createBusIcon = (occupancy, isSelected) => {
   let color = '#00205B';
@@ -44,7 +44,11 @@ function MapRecenter({ center }) {
   return null;
 }
 
-export default function CommuterView({ buses, routes, onOpenTicketModal, isOffline }) {
+export default function CommuterView({ buses, routes, onOpenTicketModal, isOffline, currentUser }) {
+  const todayStr = typeof window !== 'undefined' ? new Date().toISOString().split('T')[0] : '2026-09-12';
+  const [travelDate, setTravelDate] = useState(todayStr);
+  const isFutureDate = Boolean(travelDate && travelDate > todayStr);
+
   const [selectedBusId, setSelectedBusId] = useState('BUS-100');
   const [useMlEta, setUseMlEta] = useState(true);
   const [activePopoverBusId, setActivePopoverBusId] = useState(null);
@@ -79,16 +83,47 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
     }
   }, [buses, activeSearch]);
 
-  const handleSelectSearchRoute = (from, to) => {
+  const handleSelectSearchRoute = (from, to, pax, date) => {
     setActiveSearch({ from, to });
+    if (date) {
+      setTravelDate(date);
+    }
     const matched = findBusesForRoute(buses, from, to);
     setFilteredBusList(matched);
-    if (matched.length > 0) {
-      setSelectedBusId(matched[0].id);
+    const bus = matched.length > 0 ? matched[0] : null;
+    if (bus) {
+      setSelectedBusId(bus.id);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:route-changed', {
+          detail: { from, to, bus }
+        })
+      );
+      if (bus) {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:bus-selected', { detail: bus })
+        );
+      }
     }
   };
 
   const selectedBus = filteredBusList.find((b) => b.id === selectedBusId) || filteredBusList[0] || buses[0];
+
+  useEffect(() => {
+    if (selectedBus && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('janyatra:bus-selected', { detail: selectedBus })
+      );
+      if (selectedBus.from && selectedBus.to) {
+        window.dispatchEvent(
+          new CustomEvent('janyatra:route-changed', {
+            detail: { from: selectedBus.from, to: selectedBus.to, bus: selectedBus }
+          })
+        );
+      }
+    }
+  }, [selectedBus?.id]);
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-5rem)] bg-[#f9f9fc]">
@@ -107,55 +142,95 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
         {/* Sidebar: Bus List & Predictive ETA Toggle */}
         <div className="w-full lg:w-[420px] bg-white border-r border-navy-100 p-4 sm:p-5 overflow-y-auto flex flex-col space-y-4 shadow-sm z-20">
           
-          {/* Smart Tech Feature Banner */}
-          <div className="bg-gradient-to-r from-navy-50 to-forest-50 border border-navy-200 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-black text-navy-800 uppercase tracking-wider flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-saffron-500" />
-                <span>Smart Tech Feature</span>
-              </span>
-              <span className="bg-navy-800 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                GPS + ML Layer
-              </span>
+          {/* Passenger Identity Status Card */}
+          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-navy-50/90 to-slate-50 border border-navy-100 text-xs shadow-sm">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-7 h-7 rounded-xl bg-forest-700 text-white flex items-center justify-center font-black text-xs shadow-sm">
+                {(currentUser?.name || 'C').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <span className="font-extrabold text-navy-950 block text-xs leading-tight">
+                  {currentUser?.name || 'Commuter User'}
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {currentUser?.contact ? `${currentUser.contact} • Passenger` : 'Active Passenger Account'}
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-navy-900 leading-relaxed font-medium">
-              Unlike basic GPS trackers, JAN YATRA uses historical route congestion patterns to predict true arrival ETAs within ±3 mins.
-            </p>
+            <span className="text-[10px] font-extrabold text-forest-700 bg-forest-100/80 px-2 py-0.5 rounded-full border border-forest-200/60">
+              Verified
+            </span>
           </div>
 
-          {/* ETA Mode Toggle (GPS Only vs GPS + ML) */}
-          <div className="bg-navy-50/50 border border-navy-100 rounded-2xl p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-extrabold text-navy-800">Display ETA Model</span>
-              <span className="text-[11px] font-bold text-saffron-600 bg-saffron-50 px-2 py-0.5 rounded-md border border-saffron-200">
-                {useMlEta ? 'ML Model Enabled' : 'Raw GPS Only'}
-              </span>
+          {/* Smart Tech Feature Banner / Advance Timetable Notice */}
+          {isFutureDate ? (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 text-left space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-blue-900 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Advance Timetable Mode</span>
+                </span>
+                <span className="bg-blue-800 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                  📅 {travelDate}
+                </span>
+              </div>
+              <p className="text-xs text-blue-950 leading-relaxed font-medium">
+                Displaying scheduled departures for <strong>{travelDate}</strong>. Live countdown ETAs are hidden for future dates. Timings are based on historical route data and subject to traffic variations on the day of travel.
+              </p>
             </div>
-            
-            <div className="grid grid-cols-2 gap-2 bg-navy-100/70 p-1 rounded-xl">
-              <button
-                onClick={() => setUseMlEta(false)}
-                className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                  !useMlEta
-                    ? 'bg-white text-navy-900 shadow-sm border border-navy-200'
-                    : 'text-navy-700 hover:text-navy-950'
-                }`}
-              >
-                GPS-Only ETA
-              </button>
-              <button
-                onClick={() => setUseMlEta(true)}
-                className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center space-x-1 ${
-                  useMlEta
-                    ? 'bg-saffron-500 text-white shadow-saffron'
-                    : 'text-navy-700 hover:text-navy-950'
-                }`}
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>GPS + ML ETA</span>
-              </button>
-            </div>
-          </div>
+          ) : (
+            <>
+              {/* Smart Tech Feature Banner */}
+              <div className="bg-gradient-to-r from-navy-50 to-forest-50 border border-navy-200 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-black text-navy-800 uppercase tracking-wider flex items-center space-x-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-saffron-500" />
+                    <span>Smart Tech Feature</span>
+                  </span>
+                  <span className="bg-navy-800 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                    GPS + ML Layer
+                  </span>
+                </div>
+                <p className="text-xs text-navy-900 leading-relaxed font-medium">
+                  Unlike basic GPS trackers, JAN YATRA uses historical route congestion patterns to predict true arrival ETAs within ±3 mins.
+                </p>
+              </div>
+
+              {/* ETA Mode Toggle (GPS Only vs GPS + ML) */}
+              <div className="bg-navy-50/50 border border-navy-100 rounded-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-extrabold text-navy-800">Display ETA Model</span>
+                  <span className="text-[11px] font-bold text-saffron-600 bg-saffron-50 px-2 py-0.5 rounded-md border border-saffron-200">
+                    {useMlEta ? 'ML Model Enabled' : 'Raw GPS Only'}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 bg-navy-100/70 p-1 rounded-xl">
+                  <button
+                    onClick={() => setUseMlEta(false)}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                      !useMlEta
+                        ? 'bg-white text-navy-900 shadow-sm border border-navy-200'
+                        : 'text-navy-700 hover:text-navy-950'
+                    }`}
+                  >
+                    GPS-Only ETA
+                  </button>
+                  <button
+                    onClick={() => setUseMlEta(true)}
+                    className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center space-x-1 ${
+                      useMlEta
+                        ? 'bg-saffron-500 text-white shadow-saffron'
+                        : 'text-navy-700 hover:text-navy-950'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>GPS + ML ETA</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Active Bus List Header */}
           <div className="flex items-center justify-between">
@@ -196,98 +271,135 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
                     </div>
 
                     <div className="text-right">
-                      <div className="flex items-center justify-end space-x-1.5">
-                        <div className={`text-xl font-black ${isSelected ? 'text-saffron-400' : 'text-forest-700'}`}>
-                          {displayMinutes} mins
+                      {isFutureDate ? (
+                        <div>
+                          <div className={`text-base font-black ${isSelected ? 'text-saffron-400' : 'text-forest-700'}`}>
+                            {bus.departureTime}
+                          </div>
+                          <span className={`text-[10px] font-bold block ${isSelected ? 'text-navy-200' : 'text-navy-600'}`}>
+                            Scheduled Departure
+                          </span>
                         </div>
-                        {useMlEta && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActivePopoverBusId(activePopoverBusId === bus.id ? null : bus.id);
-                            }}
-                            className={`p-1 rounded-full transition-all ${
-                              isSelected ? 'text-saffron-300 hover:text-white hover:bg-navy-700' : 'text-navy-500 hover:text-navy-900 hover:bg-navy-100'
-                            }`}
-                            title="View GBDT Model ETA Breakdown"
-                          >
-                            <Info className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <span className={`text-[10px] font-bold block ${isSelected ? 'text-navy-200' : 'text-navy-600'}`}>
-                        {useMlEta ? 'ML Predicted' : 'GPS Calculated'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* ML-Optimized ETA Tag / Badge next to bus ETA */}
-                  {useMlEta && (
-                    <div className="mb-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActivePopoverBusId(activePopoverBusId === bus.id ? null : bus.id);
-                        }}
-                        className={`w-full text-left inline-flex items-center justify-between px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-tight border transition-colors ${
-                          isSelected
-                            ? 'bg-saffron-500/20 text-saffron-300 border-saffron-400/40 hover:bg-saffron-500/30'
-                            : 'bg-saffron-50/90 text-saffron-900 border-saffron-200 hover:bg-saffron-100'
-                        }`}
-                      >
-                        <span className="flex items-center space-x-1">
-                          <Sparkles className="w-3 h-3 text-saffron-500 shrink-0" />
-                          <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
-                        </span>
-                        <span className="text-[9px] font-black opacity-80 underline ml-1">
-                          GBDT model info
-                        </span>
-                      </button>
-
-                      {/* Info Popover powered by GBDT tollgate delay model */}
-                      {activePopoverBusId === bus.id && (
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-2 p-3 rounded-xl bg-white text-navy-950 border border-navy-200 shadow-xl text-left text-xs z-30 animate-in fade-in zoom-in-95 duration-150"
-                        >
-                          <div className="flex items-center justify-between pb-1.5 border-b border-navy-100">
-                            <span className="font-black text-navy-900 flex items-center space-x-1 text-[11px]">
-                              <Sparkles className="w-3.5 h-3.5 text-saffron-500" />
-                              <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActivePopoverBusId(null);
-                              }}
-                              className="text-navy-400 hover:text-navy-700 p-0.5 rounded"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                      ) : (
+                        <div>
+                          <div className="flex items-center justify-end space-x-1.5">
+                            <div className={`text-xl font-black ${isSelected ? 'text-saffron-400' : 'text-forest-700'}`}>
+                              {displayMinutes} mins
+                            </div>
+                            {useMlEta && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePopoverBusId(activePopoverBusId === bus.id ? null : bus.id);
+                                }}
+                                className={`p-1 rounded-full transition-all ${
+                                  isSelected ? 'text-saffron-300 hover:text-white hover:bg-navy-700' : 'text-navy-500 hover:text-navy-900 hover:bg-navy-100'
+                                }`}
+                                title="View GBDT Model ETA Breakdown"
+                              >
+                                <Info className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
-                          <p className="text-[11px] text-navy-600 font-semibold mt-1.5 leading-snug">
-                            Powered by our <strong>GBDT tollgate delay model</strong>. Dynamically factors in highway chokepoints and toll plaza queues in real time instead of a naive static countdown.
-                          </p>
-                          <div className="mt-2 space-y-1.5 bg-navy-50/70 p-2 rounded-lg text-[11px]">
-                            <div className="flex items-center justify-between">
-                              <span className="text-navy-700 font-medium">Tollgate Queue Adjustment:</span>
-                              <span className="font-black text-saffron-700">+{busEta.tollgateDelayMins}m ({busEta.tollgateName.split('&')[0].trim()})</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-navy-700 font-medium">Highway Delay Adjustment:</span>
-                              <span className="font-black text-navy-800">+{busEta.highwayDelayMins}m ({busEta.highwayName.split('&')[0].trim()})</span>
-                            </div>
-                            <div className="flex items-center justify-between border-t border-navy-200/60 pt-1">
-                              <span className="text-navy-900 font-bold">Total Dynamic ML ETA:</span>
-                              <span className="font-black text-forest-700">{busEta.mlEta} mins (vs {busEta.gpsEta}m raw GPS)</span>
-                            </div>
-                          </div>
+                          <span className={`text-[10px] font-bold block ${isSelected ? 'text-navy-200' : 'text-navy-600'}`}>
+                            {useMlEta ? 'ML Predicted' : 'GPS Calculated'}
+                          </span>
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* Future Date Timetable & Note vs Live ML Tollgate Delay Model */}
+                  {isFutureDate ? (
+                    <div className={`mb-2 p-2.5 rounded-xl border text-left space-y-1 text-xs ${
+                      isSelected
+                        ? 'bg-navy-800/80 border-navy-700 text-navy-100'
+                        : 'bg-blue-50/90 border-blue-200/80 text-blue-950'
+                    }`}>
+                      <div className="flex items-center justify-between text-[11px] font-extrabold">
+                        <span className={isSelected ? 'text-saffron-300' : 'text-blue-900'}>
+                          Timetable: {bus.departureTime} ➔ {bus.arrivalTime}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          isSelected ? 'bg-navy-700 text-white' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          Est. {bus.duration}
+                        </span>
+                      </div>
+                      <p className={`text-[10px] leading-relaxed font-medium ${
+                        isSelected ? 'text-navy-300' : 'text-blue-800'
+                      }`}>
+                        Timings are based on historical route data and subject to traffic variations on the day of travel.
+                      </p>
+                    </div>
+                  ) : (
+                    useMlEta && (
+                      <div className="mb-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActivePopoverBusId(activePopoverBusId === bus.id ? null : bus.id);
+                          }}
+                          className={`w-full text-left inline-flex items-center justify-between px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-tight border transition-colors ${
+                            isSelected
+                              ? 'bg-saffron-500/20 text-saffron-300 border-saffron-400/40 hover:bg-saffron-500/30'
+                              : 'bg-saffron-50/90 text-saffron-900 border-saffron-200 hover:bg-saffron-100'
+                          }`}
+                        >
+                          <span className="flex items-center space-x-1">
+                            <Sparkles className="w-3 h-3 text-saffron-500 shrink-0" />
+                            <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                          </span>
+                          <span className="text-[9px] font-black opacity-80 underline ml-1">
+                            GBDT model info
+                          </span>
+                        </button>
+
+                        {/* Info Popover powered by GBDT tollgate delay model */}
+                        {activePopoverBusId === bus.id && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-2 p-3 rounded-xl bg-white text-navy-950 border border-navy-200 shadow-xl text-left text-xs z-30 animate-in fade-in zoom-in-95 duration-150"
+                          >
+                            <div className="flex items-center justify-between pb-1.5 border-b border-navy-100">
+                              <span className="font-black text-navy-900 flex items-center space-x-1 text-[11px]">
+                                <Sparkles className="w-3.5 h-3.5 text-saffron-500" />
+                                <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivePopoverBusId(null);
+                                }}
+                                className="text-navy-400 hover:text-navy-700 p-0.5 rounded"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <p className="text-[11px] text-navy-600 font-semibold mt-1.5 leading-snug">
+                              Powered by our <strong>GBDT tollgate delay model</strong>. Dynamically factors in highway chokepoints and toll plaza queues in real time instead of a naive static countdown.
+                            </p>
+                            <div className="mt-2 space-y-1.5 bg-navy-50/70 p-2 rounded-lg text-[11px]">
+                              <div className="flex items-center justify-between">
+                                <span className="text-navy-700 font-medium">Tollgate Queue Adjustment:</span>
+                                <span className="font-black text-saffron-700">+{busEta.tollgateDelayMins}m ({busEta.tollgateName.split('&')[0].trim()})</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-navy-700 font-medium">Highway Delay Adjustment:</span>
+                                <span className="font-black text-navy-800">+{busEta.highwayDelayMins}m ({busEta.highwayName.split('&')[0].trim()})</span>
+                              </div>
+                              <div className="flex items-center justify-between border-t border-navy-200/60 pt-1">
+                                <span className="text-navy-900 font-bold">Total Dynamic ML ETA:</span>
+                                <span className="font-black text-forest-700">{busEta.mlEta} mins (vs {busEta.gpsEta}m raw GPS)</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
                   )}
 
                   <div className="flex items-center justify-between text-xs mt-3 pt-3 border-t border-navy-100/20">
@@ -326,11 +438,20 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
           {/* Selected Bus Ticket Booking Button */}
           <div className="pt-2">
             <button
-              onClick={() => onOpenTicketModal(selectedBus)}
+              onClick={() => {
+                const target = selectedBus || filteredBusList?.[0] || buses?.[0];
+                if (target && onOpenTicketModal) {
+                  onOpenTicketModal(target, { travelDate });
+                }
+              }}
               className="w-full bg-gradient-to-r from-saffron-500 to-saffron-600 hover:from-saffron-600 hover:to-saffron-700 text-white font-extrabold py-3.5 px-4 rounded-xl shadow-saffron transition-all flex items-center justify-center space-x-2 text-sm border border-saffron-400"
             >
               <Ticket className="w-5 h-5" />
-              <span>Book Seat on {selectedBus.regNumber} (₹{selectedBus.fare || 110})</span>
+              <span>
+                {isFutureDate
+                  ? `Reserve Seat for ${travelDate} (${selectedBus?.regNumber || 'Express'})`
+                  : `Book Seat on ${selectedBus?.regNumber || 'Express'} (₹${selectedBus?.fare || 110})`}
+              </span>
             </button>
           </div>
 
@@ -367,65 +488,80 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
                   </span>
                 </div>
 
-                {/* ML-Optimized ETA Visual Tag, Badge & GBDT Model Adjustment */}
-                <div className="bg-gradient-to-r from-saffron-50 to-navy-50 border border-saffron-200/80 rounded-xl p-2.5 my-2.5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase tracking-wider font-extrabold text-navy-600 block">
-                        Estimated Arrival (ETA)
+                {/* ML-Optimized ETA Visual Tag, Badge & GBDT Model Adjustment OR Future Timetable */}
+                {isFutureDate ? (
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 my-2.5 text-left">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-900 flex items-center space-x-1">
+                        <Calendar className="w-3 h-3 text-blue-700" />
+                        <span>Scheduled Timetable ({travelDate})</span>
                       </span>
-                      <div className="flex items-baseline space-x-1.5">
-                        <span className="text-2xl font-black text-navy-950">
-                          {activeEtaMins} mins
-                        </span>
-                        {useMlEta && (
-                          <span className="text-[11px] font-bold text-saffron-600">
-                            (Dynamic GBDT Model)
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-[10px] font-bold bg-blue-200 text-blue-950 px-1.5 py-0.5 rounded">
+                        Advance Timetable
+                      </span>
                     </div>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xl font-black text-navy-950">
+                        {selectedBus.departureTime} ➔ {selectedBus.arrivalTime}
+                      </span>
+                      <span className="text-xs font-bold text-navy-700 bg-white/80 px-2 py-0.5 rounded-md border border-navy-200">
+                        Est. {selectedBus.duration}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[10px] text-blue-950 bg-white/70 p-2 rounded-lg leading-relaxed font-medium border border-blue-100">
+                      ℹ️ Timings are based on historical route data and subject to traffic variations on the day of travel.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-gradient-to-r from-saffron-50 to-navy-50 border border-saffron-200/80 rounded-xl p-2.5 my-2.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase tracking-wider font-extrabold text-navy-600 block">
+                          Estimated Arrival (ETA)
+                        </span>
+                        <div className="flex items-baseline space-x-1.5">
+                          <span className="text-2xl font-black text-navy-950">
+                            {activeEtaMins} mins
+                          </span>
+                          {useMlEta && (
+                            <span className="text-[11px] font-bold text-saffron-600">
+                              (Dynamic GBDT Model)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {useMlEta && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveDetailsPopover(!activeDetailsPopover)}
+                          className="p-1 text-navy-600 hover:text-navy-950 rounded-full hover:bg-white/60 transition-all"
+                          title="View GBDT Model Delay Adjustments"
+                        >
+                          <Info className="w-4 h-4 text-saffron-600" />
+                        </button>
+                      )}
+                    </div>
+
                     {useMlEta && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveDetailsPopover(!activeDetailsPopover)}
-                        className="p-1 text-navy-600 hover:text-navy-950 rounded-full hover:bg-white/60 transition-all"
-                        title="View GBDT Model Delay Adjustments"
-                      >
-                        <Info className="w-4 h-4 text-saffron-600" />
-                      </button>
+                      <div className="mt-1.5 pt-1.5 border-t border-saffron-200/60">
+                        <div className="flex items-center space-x-1">
+                          <span className="inline-flex items-center space-x-1 bg-saffron-500 text-white px-2 py-0.5 rounded-md text-[10px] font-black shadow-xs">
+                            <Sparkles className="w-3 h-3" />
+                            <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-navy-700 font-semibold mt-1">
+                          Powered by our <strong>GBDT tollgate delay model</strong>
+                        </p>
+                      </div>
                     )}
                   </div>
+                )}
 
-                  {useMlEta && (
-                    <div className="mt-1.5 pt-1.5 border-t border-saffron-200/60">
-                      <div className="flex items-center space-x-1">
-                        <span className="inline-flex items-center space-x-1 bg-saffron-500 text-white px-2 py-0.5 rounded-md text-[10px] font-black shadow-xs">
-                          <Sparkles className="w-3 h-3" />
-                          <span>ML-Optimized ETA (75% more accurate, ±1.8m)</span>
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-navy-700 font-semibold mt-1">
-                        Powered by our <strong>GBDT tollgate delay model</strong>
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Real-Time Speed & Dynamic Delay Adjustments */}
-                <div className="grid grid-cols-2 gap-2 text-xs my-2.5 bg-navy-50/50 p-2.5 rounded-xl border border-navy-100">
-                  <div>
-                    <span className="text-navy-600 block text-[10px] font-bold">GPS Speed</span>
-                    <span className="font-extrabold text-navy-900">{selectedBus.speed} km/h</span>
-                  </div>
-                  <div>
-                    <span className="text-navy-600 block text-[10px] font-bold">Tollgate Queue Adj.</span>
-                    <span className="font-extrabold text-saffron-600">+{selectedBusEta.tollgateDelayMins}m</span>
-                  </div>
-                  <div className="col-span-2 pt-1 border-t border-navy-100/60 flex items-center justify-between text-[10px]">
-                    <span className="text-navy-600 font-medium">Highway Delay Adj:</span>
-                    <span className="font-bold text-navy-800">+{selectedBusEta.highwayDelayMins}m ({selectedBusEta.highwayName.split('&')[0].trim()})</span>
-                  </div>
+                {/* Real-Time Speed */}
+                <div className="flex items-center justify-between text-xs my-2.5 bg-navy-50/50 px-3 py-2 rounded-xl border border-navy-100">
+                  <span className="text-navy-600 text-[10px] font-bold">GPS Speed</span>
+                  <span className="font-extrabold text-navy-900">{selectedBus.speed} km/h</span>
                 </div>
 
                 {/* Popover overlay for Route Details Card if toggled */}
@@ -463,10 +599,15 @@ export default function CommuterView({ buses, routes, onOpenTicketModal, isOffli
                 <div className="flex items-center justify-between text-xs pt-1">
                   <span className="text-navy-800 font-bold">Driver: {selectedBus.driver}</span>
                   <button
-                    onClick={() => onOpenTicketModal(selectedBus)}
+                    onClick={() => {
+                      const target = selectedBus || filteredBusList?.[0] || buses?.[0];
+                      if (target && onOpenTicketModal) {
+                        onOpenTicketModal(target, { travelDate });
+                      }
+                    }}
                     className="text-saffron-600 hover:text-saffron-700 font-black flex items-center space-x-1"
                   >
-                    <span>Book Pass (₹{selectedBus.fare || 110})</span>
+                    <span>Book Pass (₹{selectedBus?.fare || 110})</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
